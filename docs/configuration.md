@@ -21,7 +21,7 @@ Junction reads `/etc/junction/config.json` at start (`junctiond -config <path>` 
 | `failover_config` | `/etc/vpn-failover/config.json` | Older installs: a separate file in the same format as `failover`. Used only when `failover` is absent. |
 | `dhcp_listen` | `true` | Learn device names by listening to DHCP. Set `false` when Junction's dnsmasq hands out addresses (it needs the port); names then come from the lease file. |
 | `dnsmasq_leases` | `/var/lib/misc/dnsmasq.leases` | The lease file, when dnsmasq runs. |
-| `router_url`, `router_user`, `router_password` | none | Optional: read your router's device list for names. Supported: Huawei HG8145-style pages. |
+| `router_url`, `router_user`, `router_password` | none | Optional, not needed for Junction to work: read your router's device list for better names. Supported routers: [routers.md](routers.md). |
 | `brand_name` | `"Junction"` | The name in the top bar (also in Settings → General). |
 | `backup_name`, `backup_ip` | `"Backup"`, keepalived's peer | How the backup gateway box is shown. |
 | `update_url` | none | A GitHub releases API URL (e.g. `https://api.github.com/repos/XIVIX134/junction/releases/latest`). When set, the Health page offers new versions and installs them with automatic rollback. |

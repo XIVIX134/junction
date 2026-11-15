@@ -54,6 +54,7 @@ devices ──> gateway box ─────────────────�
 - [How it compares](docs/comparison.md) with Pi-hole, OpenWrt, Firewalla and pfSense
 - [FAQ](docs/faq.md) and [troubleshooting](docs/troubleshooting.md)
 - [Configuration](docs/configuration.md): every key in `config.json`, including VPN exits and failover
+- [Routers](docs/routers.md): works with any router; optional device-name reading for supported models
 - [API](API.md)
 
 ## Development
