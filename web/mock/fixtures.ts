@@ -573,7 +573,7 @@ const speedState = new Map<string, number | null>();
 const exemptions = new Map<string, number>(); // `${ruleId}|${deviceId}` -> until (epoch ms)
 
 let rules: Rule[] = [
-  { id: 1, name: "Daily cap", enabled: true, order: 1, match: { groups: ["Gaming"] }, when: { usage: { period: "day", overGB: 4 } }, then: { speedMbps: 2 } },
+  { id: 1, name: "Daily cap", enabled: true, order: 1, match: { groups: ["Guests"] }, when: { usage: { period: "day", overGB: 4 } }, then: { speedMbps: 2 } },
   { id: 2, name: "Kids bedtime", enabled: true, order: 2, match: { groups: ["Kids"] }, when: { schedule: { days: [0, 1, 2, 3, 4, 5, 6], start: "23:30", end: "07:00" } }, then: { pause: true } },
 ];
 

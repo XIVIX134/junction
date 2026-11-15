@@ -749,24 +749,7 @@ if [ "$SB_MANAGED" = 1 ]; then
     fi
 fi
 
-# Junction's config; keys added by hand to an existing file are kept.
-DHCP_ON=false
-[ -n "$DHCP" ] && DHCP_ON=true
-jq -n --arg listen "$LISTEN" --arg lan "$LAN_CIDR" --arg ifc "$LAN_IF" --arg tz "$TZ_NAME" \
-    --arg gw "$GATEWAY_IP" --arg profile "$PROFILE" --arg brand "$BRAND" --arg leases "$LEASES" \
-    --argjson dhcp "$DHCP_ON" --argjson fo "$FAILOVER" '
-    {listen: $listen, db: "/var/lib/junction/junction.db",
-     singbox_config: "/etc/sing-box/config.json", clash_api: "http://127.0.0.1:9090",
-     failover_api: "", lan: $lan, interface: $ifc, timezone: $tz, gateway_ip: $gw,
-     default_profile: $profile, brand_name: $brand,
-     dhcp_listen: ($dhcp | not), dnsmasq_leases: $leases, failover_enabled: $fo}
-    + (if $fo then {failover_config: "/etc/junction/failover.json"} else {} end)' >"$WORK/junction-new.json"
-if [ -r "$ETC/config.json" ] && jq -e 'type == "object"' "$ETC/config.json" >/dev/null 2>&1; then
-    jq -s '.[0] * .[1]' "$ETC/config.json" "$WORK/junction-new.json" >"$WORK/junction.json"
-else
-    cp "$WORK/junction-new.json" "$WORK/junction.json"
-fi
-
+# The VPN exits and how to check them go into Junction's config ("failover").
 if [ "$FAILOVER" = true ]; then
     jq -n --arg p "$PROFILE" --argjson base 22101 --slurpfile exits "$WORK/exits.json" '
         {probe_url: "http://cp.cloudflare.com", default_profile: $p, profiles: {($p): ""},
@@ -774,6 +757,26 @@ if [ "$FAILOVER" = true ]; then
          endpoints: [$exits[0] | to_entries[] |
                      {key: .value.name, name: .value.name, ip: .value.server, probe_ports: {($p): ($base + .key)}}]}' \
         >"$WORK/failover.json"
+else
+    echo null >"$WORK/failover.json"
+fi
+
+# Junction's config; keys added by hand to an existing file are kept.
+DHCP_ON=false
+[ -n "$DHCP" ] && DHCP_ON=true
+jq -n --arg listen "$LISTEN" --arg lan "$LAN_CIDR" --arg ifc "$LAN_IF" --arg tz "$TZ_NAME" \
+    --arg gw "$GATEWAY_IP" --arg profile "$PROFILE" --arg brand "$BRAND" --arg leases "$LEASES" \
+    --argjson dhcp "$DHCP_ON" --argjson fo "$FAILOVER" --slurpfile focfg "$WORK/failover.json" '
+    {listen: $listen, db: "/var/lib/junction/junction.db",
+     singbox_config: "/etc/sing-box/config.json", clash_api: "http://127.0.0.1:9090",
+     failover_api: "", lan: $lan, interface: $ifc, timezone: $tz, gateway_ip: $gw,
+     default_profile: $profile, brand_name: $brand,
+     dhcp_listen: ($dhcp | not), dnsmasq_leases: $leases, failover_enabled: $fo}
+    + (if $fo then {failover: $focfg[0]} else {} end)' >"$WORK/junction-new.json"
+if [ -r "$ETC/config.json" ] && jq -e 'type == "object"' "$ETC/config.json" >/dev/null 2>&1; then
+    jq -s '.[0] * .[1]' "$ETC/config.json" "$WORK/junction-new.json" >"$WORK/junction.json"
+else
+    cp "$WORK/junction-new.json" "$WORK/junction.json"
 fi
 
 export R_MODE=tproxy R_LAN_IF="$LAN_IF" R_WAN_IF="$WAN_IF" R_LAN_CIDR="$LAN_CIDR" R_GATEWAY_IP="$GATEWAY_IP"
@@ -948,7 +951,6 @@ step "Starting Junction"
 CHANGED=0
 [ "$DRY" = 1 ] || mkdir -p "$ETC" /var/lib/junction
 put "$WORK/junction.json" "$ETC/config.json" 600
-[ "$FAILOVER" = true ] && put "$WORK/failover.json" "$ETC/failover.json" 600
 put "$WORK/exits.json" "$SAVED_EXITS" 600
 put "$WORK/setup.env" "$STATE" 600
 svc_enable junctiond

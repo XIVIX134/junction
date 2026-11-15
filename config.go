@@ -22,8 +22,13 @@ type Config struct {
 	SeedNames     map[string]string `json:"seed_names"`     // MAC -> name, used only until the user renames
 	SeedGroups    map[string]string `json:"seed_groups"`    // MAC -> group
 
-	FailoverEnabled bool   `json:"failover_enabled"` // Junction runs failover instead of vpn-failoverd
-	FailoverConfig  string `json:"failover_config"`  // the old daemon's config: endpoints, probe ports, thresholds
+	FailoverEnabled bool `json:"failover_enabled"` // Junction switches between VPN exits by itself
+	// The VPN exits and how to check them: endpoints, probe ports, profiles,
+	// thresholds (see API.md, "failover"). Older installs keep them in a separate
+	// file (failover_config, the old vpn-failover daemon's format); used only when
+	// this section is absent.
+	Failover       json.RawMessage `json:"failover"`
+	FailoverConfig string          `json:"failover_config"`
 
 	// DHCP: listen passively on :67 for hostnames until the gateway runs its own
 	// DHCP server; then set dhcp_listen=false (dnsmasq needs the port) and names
@@ -52,7 +57,6 @@ func defaultConfig() Config {
 		DB:             "/var/lib/junction/junction.db",
 		SingBoxConfig:  "/etc/sing-box/config.json",
 		ClashAPI:       "http://127.0.0.1:9090",
-		LAN:            "192.168.1.0/24",
 		Interface:      "eth0",
 		FailoverConfig: "/etc/vpn-failover/config.json",
 		DnsmasqLeases:  "/var/lib/misc/dnsmasq.leases",
@@ -87,6 +91,9 @@ func (c *Config) resolve() (gatewayDetected bool) {
 	if c.TimeZone == "" {
 		c.TimeZone = detectTimezone("UTC")
 	}
+	if c.LAN == "" {
+		c.LAN = detectLAN(c.Interface)
+	}
 	if c.GatewayIP == "" {
 		c.GatewayIP, gatewayDetected = detectGatewayIP(c.Interface), true
 	}
@@ -94,6 +101,25 @@ func (c *Config) resolve() (gatewayDetected bool) {
 		c.FailoverAPI = "http://" + c.GatewayIP + ":7070/api/status"
 	}
 	return gatewayDetected
+}
+
+// detectLAN is the network of the interface's first IPv4 address, e.g.
+// 192.168.1.7/24 -> "192.168.1.0/24"; "" when there's none (no sweep then).
+func detectLAN(iface string) string {
+	ifc, err := net.InterfaceByName(iface)
+	if err != nil {
+		return ""
+	}
+	addrs, err := ifc.Addrs()
+	if err != nil {
+		return ""
+	}
+	for _, a := range addrs {
+		if ipn, ok := a.(*net.IPNet); ok && ipn.IP.To4() != nil {
+			return (&net.IPNet{IP: ipn.IP.Mask(ipn.Mask), Mask: ipn.Mask}).String()
+		}
+	}
+	return ""
 }
 
 // detectGatewayIP: the floating address when keepalived manages one (that is

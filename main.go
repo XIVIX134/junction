@@ -74,7 +74,7 @@ func main() {
 		stop()
 	}
 	if cfg.FailoverEnabled {
-		fo, err := loadFailover(cfg.FailoverConfig, state)
+		fo, err := loadFailover(cfg, state)
 		if err != nil {
 			log.Fatalf("failover: %v", err)
 		}

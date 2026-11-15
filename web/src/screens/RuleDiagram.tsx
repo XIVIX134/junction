@@ -148,6 +148,7 @@ export default function RuleDiagram({ o, initial, onSaved }: { o: Overview; init
   const [msg, setMsg] = useState<{ ok: boolean; t: string } | null>(null);
   const kinds = kindsOf(r);
   const on = connected(g.edges);
+  const profileNames = useProfiles();
   const draft = effectiveDraft(r, g);
   const dataOf = (k: Kind): NodeData => ({ kind: k, text: nodeText(k, r, o.devices), off: k !== "who" && !on.has(k) });
   const [nodes, setNodes] = useState<Node<NodeData>[]>(() =>
@@ -203,7 +204,7 @@ export default function RuleDiagram({ o, initial, onSaved }: { o: Overview; init
     if (k === "pause") then.pause = true;
     if (k === "speed") then.speedMbps = 2;
     if (k === "vpn") then.vpn = true;
-    if (k === "profile") then.profile = "gaming";
+    if (k === "profile") then.profile = profileNames.includes("gaming") ? "gaming" : profileNames[0];
     setR({ ...r, when, then });
     const col = colOf(k);
     const same = kinds.filter((x) => colOf(x) === col).length;

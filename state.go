@@ -105,7 +105,7 @@ func newState(cfg Config, store *Store) (*State, error) {
 	}
 	s := &State{
 		cfg: cfg, base: cfg, store: store, loc: loc, secret: secret,
-		exitList: readExitList(cfg.FailoverConfig), sbOrder: singboxOrder(cfg.SingBoxConfig),
+		exitList: readExitList(cfg), sbOrder: singboxOrder(cfg.SingBoxConfig),
 		restart:     func(string) {},
 		selfIP:      map[string]bool{"127.0.0.1": true},
 		devs:        map[string]*devState{},

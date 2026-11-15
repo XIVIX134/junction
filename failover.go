@@ -73,13 +73,23 @@ type Failover struct {
 
 const maxBackoff = 5 * time.Minute
 
-func loadFailover(path string, s *State) (*Failover, error) {
-	b, err := os.ReadFile(path)
+// failoverJSON returns the failover settings: the config's own "failover"
+// section, else the older separate file. src says which, for messages.
+func failoverJSON(cfg Config) (b []byte, src string, err error) {
+	if len(cfg.Failover) > 0 && string(cfg.Failover) != "null" {
+		return cfg.Failover, "the failover section of the config", nil
+	}
+	b, err = os.ReadFile(cfg.FailoverConfig)
+	return b, cfg.FailoverConfig, err
+}
+
+func loadFailover(cfg Config, s *State) (*Failover, error) {
+	b, path, err := failoverJSON(cfg)
 	if err != nil {
 		return nil, err
 	}
 	c := foConfig{ProbeURL: "http://cp.cloudflare.com", ProbeInterval: 10, ProbeTimeout: 3, FailureThreshold: 3,
-		SuccessThreshold: 6, RecoveryCooldown: 600, StatePath: "/var/lib/vpn-failover/state.json", DefaultProfile: "psn"}
+		SuccessThreshold: 6, RecoveryCooldown: 600, StatePath: "/var/lib/junction/failover-state.json", DefaultProfile: "default"}
 	if err := json.Unmarshal(b, &c); err != nil {
 		return nil, err
 	}

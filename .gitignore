@@ -15,3 +15,7 @@ isp.json
 
 # your gateway, for ./build.sh deploy
 /.deploy.env
+
+# your own gateway lives in ../junction-site (see build.sh)
+/deploy/
+/screens/

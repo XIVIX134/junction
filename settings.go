@@ -197,8 +197,8 @@ func (s *State) exitName(key string) string {
 }
 
 // readExitList reads the VPN exits (and the default profile) from the failover config.
-func readExitList(path string) []foEndpoint {
-	b, err := os.ReadFile(path)
+func readExitList(cfg Config) []foEndpoint {
+	b, _, err := failoverJSON(cfg)
 	if err != nil {
 		return nil
 	}
@@ -209,8 +209,8 @@ func readExitList(path string) []foEndpoint {
 	return c.Endpoints
 }
 
-func failoverDefaultProfile(path string) string {
-	b, err := os.ReadFile(path)
+func failoverDefaultProfile(cfg Config) string {
+	b, _, err := failoverJSON(cfg)
 	if err != nil {
 		return ""
 	}
@@ -248,7 +248,7 @@ func (s *State) globalProfile() string {
 		defer s.fo.mu.Unlock()
 		return s.fo.prof
 	}
-	for _, p := range []string{s.setting("default_profile", ""), s.base.DefaultProfile, failoverDefaultProfile(s.cfg.FailoverConfig)} {
+	for _, p := range []string{s.setting("default_profile", ""), s.base.DefaultProfile, failoverDefaultProfile(s.cfg)} {
 		if p != "" && validProfile(p) {
 			return p
 		}

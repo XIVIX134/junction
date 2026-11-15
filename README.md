@@ -3,7 +3,7 @@
 
 **See and steer every device on your home network, from one page.** Junction turns a small Linux box (a Raspberry Pi, an old PC, a VM or a Proxmox container) into your network's gateway. Every device that uses it shows up with what it's doing, and you decide, per device or per group, whether it goes out directly or through a VPN, how fast it may go, how much it may use, and when it's paused.
 
-![Dashboard](docs/screenshots/dashboard.png)
+![A tour: dashboard, clients, turning on the VPN for one device, rules, internet, health, light mode](docs/screenshots/tour.gif)
 
 ## What it does
 
@@ -47,6 +47,14 @@ devices ──> gateway box ─────────────────�
 ```
 
 `junctiond` is one static binary with the web app embedded (Go + React, SQLite). It reads connections from sing-box's API, counts whole packets with two counting-only firewall chains, and writes the small rule-set files sing-box reloads by itself. The API is documented in [API.md](API.md).
+
+## Docs
+
+- [Install guide](packaging/README.md): Raspberry Pi, Debian/Ubuntu, Alpine, Proxmox, and pointing your devices at the gateway
+- [How it compares](docs/comparison.md) with Pi-hole, OpenWrt, Firewalla and pfSense
+- [FAQ](docs/faq.md) and [troubleshooting](docs/troubleshooting.md)
+- [Configuration](docs/configuration.md): every key in `config.json`, including VPN exits and failover
+- [API](API.md)
 
 ## Development
 

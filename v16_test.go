@@ -31,6 +31,7 @@ func testState(t *testing.T) *State {
 		t.Cleanup(func() { *v = old })
 	}
 	cfg := defaultConfig()
+	cfg.LAN = "192.168.1.0/24" // normally detected from the interface
 	cfg.DB = filepath.Join(dir, "j.db")
 	cfg.FailoverConfig = filepath.Join(dir, "failover.json")
 	cfg.DnsmasqLeases = filepath.Join(dir, "leases")
@@ -447,7 +448,7 @@ func TestProfilesFromSelectors(t *testing.T) {
 func TestExitNames(t *testing.T) {
 	s := testState(t)
 	os.WriteFile(s.cfg.FailoverConfig, []byte(`{"endpoints":[{"key":"azure","name":"Azure"},{"key":"zai"},{"key":"oz"}]}`), 0o644)
-	s.exitList = readExitList(s.cfg.FailoverConfig)
+	s.exitList = readExitList(s.cfg)
 	if s.exitName("azure") != "Azure" || s.exitName("zai") != "Zai" || s.exitName("other") != "Other" {
 		t.Fatalf("names: %s %s", s.exitName("zai"), s.exitName("other"))
 	}

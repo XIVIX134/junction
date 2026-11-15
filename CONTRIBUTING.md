@@ -30,3 +30,7 @@ scripts/release.sh                     # release tarballs for amd64, arm64, armv
 - Don't commit secrets or anything from your own network (MAC addresses, device names, IPs other than documentation ranges).
 
 By contributing you agree your work is licensed under the GPL-3.0-or-later, like the rest of the project.
+
+## Keeping your own network out of commits
+
+Develop on your own gateway as much as you like, but keep its details out of the repository: put your deploy target and files in a site folder outside the repo (`../junction-site`, see `build.sh`). To be safe, list what must never be published (names, MAC addresses, home IPs, account numbers), one regex per line, in `~/.junction-private`, then run `scripts/install-hooks.sh` once: every `git push` is checked against it.
