@@ -46,9 +46,9 @@ export function Network({ s, apply }: P) {
           <Restarts />
         </Row>
       </Panel>
-      <Panel title="Router" right={n.router ? <span className={n.router.connected ? "okc" : "warnc"}>{n.router.connected ? `connected · ${n.router.devices} devices` : "can't log in"}</span> : <span>optional</span>}>
+      <Panel title="Router" right={n.router ? <span className={n.router.connected ? "okc" : "warnc"}>{n.router.connected ? `connected · ${n.router.devices} devices` : "can't log in"}</span> : <span>optional, not needed</span>}>
         <div className="note" style={{ padding: "10px 0 4px" }}>
-          Junction can read your router's device list for better names. Supported: Huawei HG8145-style router pages.
+          Optional: Junction works with any router. If yours is supported, Junction can read its device list for better names; without it, names come from DHCP, mDNS and UPnP. <a href="https://github.com/XIVIX134/junction/blob/main/docs/routers.md" target="_blank" rel="noreferrer">Supported routers</a>
         </div>
         <Row k="Router page">
           <input className="inp" style={{ width: 240 }} aria-label="Router page" placeholder="https://192.168.1.1" value={url} onChange={(e) => setUrl(e.target.value)} />
