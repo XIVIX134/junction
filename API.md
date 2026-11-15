@@ -313,3 +313,14 @@ New config keys (all optional): `gateway_ip` (default: keepalived's floating add
 - **Data**: `usageDays` (30–1000, default 400) and `sitesDays` (7–400, default 35) are what the daily clean-up keeps; the bundle's wire counts stay at least 100 days.
 
 `junctiond -print-listen` prints the configured `listen` address (safe-update.sh uses it to find the port). The in-app updater runs the release's own `gateway/safe-update.sh` when it has one.
+
+## v1.9: what it's used for, daily usage per device
+
+| Method | Path | |
+|---|---|---|
+| GET | `/api/categories?days=7[&device=id]` (1–200) | `CategoriesView` `{ from, to, days, since, total, prevTotal, categories: CategoryUsage[] }`: the sites seen over the last `days` (today counts as one) put in categories, largest first, each `{ key, name, bytes, prev, sites (top 6), devices (top 5) }`. `prev`/`prevTotal` are the same-length period before; `since` is the first day with site history, so a comparison is only fair when `from - days >= since`. |
+| GET | `/api/devices/daily?days=14` (1–60) | `{ days: ["YYYY-MM-DD"...], devices: { id: [bytes per day] } }`: what each device sent and received per day, oldest first, today last. |
+| GET | `/api/traffic?hours=168&device=id` | As `/api/traffic`, for one device. |
+
+Categories come from the site names Junction sees (DNS and TLS): each name is matched against a built-in list of domains (`categories.go`), from the most specific suffix. Keys: `video`, `social`, `messaging`, `ai` (AI and developer tools), `gaming`, `music`, `updates`, `cloud`, `speedtest`, `web` (any other name) and `unnamed` (traffic to an IP address with no name: not guessed). Site history is kept `sitesDays` (35 by default).
+

@@ -1099,7 +1099,8 @@ export function categories(q: URLSearchParams, now = new Date()) {
       };
     })
     .sort((x, y) => y.bytes - x.bytes);
-  return { from: dayStr(from.y, from.m, from.d), to: today, days, total: Math.round(total), prevTotal: Math.round(prevTotal), categories: cats };
+  const s0 = addDays(c.y, c.m, c.d, -60); // the sample household has two months of sites
+  return { from: dayStr(from.y, from.m, from.d), to: today, days, since: dayStr(s0.y, s0.m, s0.d), total: Math.round(total), prevTotal: Math.round(prevTotal), categories: cats };
 }
 
 export function devicesDaily(q: URLSearchParams, now = new Date()) {

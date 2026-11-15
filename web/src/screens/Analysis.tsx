@@ -40,12 +40,22 @@ const CAT_HELP: Record<string, string> = {
 };
 
 /** Ranked bars of categories; hover for the details, click to open them. */
+/** "YYYY-MM-DD" plus n days. */
+const addDay = (k: string, n: number) => {
+  const d = new Date(`${k}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+/** A comparison is fair only when the whole period before is inside the site history. */
+const canCompare = (v: CategoriesView) => !!v.since && v.since <= addDay(v.from, -v.days);
+
 function CategoryList({ v, device }: { v: CategoriesView; device?: string }) {
   const [open, setOpen] = useState<string | null>(null);
   const cats = v.categories.filter((c) => c.bytes > 0);
   const max = Math.max(1, ...cats.map((c) => c.bytes));
   const flip = useFlip(cats.map((c) => c.key).join());
   const prevLabel = v.days === 1 ? "yesterday" : `the ${v.days} days before`;
+  const compare = canCompare(v);
   if (!cats.length)
     return (
       <div className="note" style={{ padding: "10px 0" }}>
@@ -55,7 +65,7 @@ function CategoryList({ v, device }: { v: CategoriesView; device?: string }) {
   return (
     <div className="cats" ref={flip}>
       {cats.map((c) => {
-        const ch = change(c.bytes, c.prev);
+        const ch = compare ? change(c.bytes, c.prev) : null;
         const tip = [
           `${c.name}: ${bytes(c.bytes)}, ${pctOf(c.bytes, v.total)}% of all`,
           ...(CAT_HELP[c.key] ? [CAT_HELP[c.key]] : []),
@@ -71,7 +81,7 @@ function CategoryList({ v, device }: { v: CategoriesView; device?: string }) {
                 .map((d) => `${d.name} ${bytes(d.bytes)}`)
                 .join(", ")}`
             : "",
-          `${prevLabel[0].toUpperCase()}${prevLabel.slice(1)}: ${bytes(c.prev)}`,
+          compare ? `${prevLabel[0].toUpperCase()}${prevLabel.slice(1)}: ${bytes(c.prev)}` : "",
           "Click for more",
         ]
           .filter(Boolean)
@@ -223,9 +233,13 @@ export function CategoriesPanel() {
         )}
         {v && (
           <div className="note" style={{ marginTop: 6 }}>
-            {bytes(v.total)} with a site name or address · change against{" "}
-            {days === 1 ? "yesterday" : `the ${days} days before`} · hover a row
-            for its sites and devices
+            {bytes(v.total)} with a site name or address ·{" "}
+            {canCompare(v)
+              ? `change against ${days === 1 ? "yesterday" : `the ${days} days before`}`
+              : v.since
+                ? `sites counted since ${dayName(v.since)}: changes show once there's a full ${days === 1 ? "day" : `${days} days`} before to compare with`
+                : "no site history yet"}{" "}
+            · hover a row for its sites and devices
           </div>
         )}
       </div>
@@ -284,11 +298,17 @@ export function InsightsPanel({
     side?: React.ReactNode;
     tip?: string;
   }[] = [];
+  // Comparisons need the whole week before inside the history (Junction may have started recently).
+  let prevOk = false;
+  let startDay: string | null = null;
 
   if (daily) {
     const tot = daily.days.map((_, i) =>
       Object.values(daily.devices).reduce((s, v) => s + (v[i] ?? 0), 0),
     );
+    prevOk = tot[0] > 0;
+    const firstI = tot.findIndex((x) => x > 0);
+    startDay = firstI >= 0 ? daily.days[firstI] : null;
     const now = tot.slice(7).reduce((a, b) => a + b, 0);
     const prev = tot.slice(0, 7).reduce((a, b) => a + b, 0);
     const ch = change(now, prev);
@@ -298,9 +318,11 @@ export function InsightsPanel({
         <>
           <b>{bytes(now)}</b> in the last 7 days{" "}
           <span className="t3">
-            {ch && prev > 0
+            {prevOk && ch && prev > 0
               ? `${ch.dir === "flat" ? "about the same as" : `${ch.t.slice(2)} ${ch.dir === "up" ? "more than" : "less than"}`} the week before (${bytes(prev)})`
-              : ""}
+              : startDay && startDay > daily.days[7]
+                ? `counted since ${dayName(startDay)}`
+                : ""}
           </span>
         </>
       ),
@@ -326,7 +348,7 @@ export function InsightsPanel({
       if (!best || Math.abs(Math.log(r)) > Math.abs(Math.log(best.r)))
         best = { id, now: n, prev: p, r };
     }
-    if (best && Math.abs(Math.log(best.r)) > Math.log(1.15)) {
+    if (prevOk && best && Math.abs(Math.log(best.r)) > Math.log(1.15)) {
       const up = best.r > 1;
       const v = daily.devices[best.id];
       items.push({
@@ -336,11 +358,11 @@ export function InsightsPanel({
             <b>{name(best.id)}</b> used{" "}
             {up
               ? best.r >= 1.95
-                ? `${best.r.toFixed(1)}× as much`
-                : `${Math.round((best.r - 1) * 100)}% more`
-              : `${Math.round((1 - best.r) * 100)}% less`}{" "}
+                ? `${best.r.toFixed(1)}× as much as`
+                : `${Math.round((best.r - 1) * 100)}% more than`
+              : `${Math.round((1 - best.r) * 100)}% less than`}{" "}
             <span className="t3">
-              than the week before · {bytes(best.now)} vs {bytes(best.prev)}
+              the week before · {bytes(best.now)} vs {bytes(best.prev)}
             </span>
           </>
         ),
@@ -415,7 +437,7 @@ export function InsightsPanel({
         <>
           <b>{top.name}</b> was {pctOf(top.bytes, cats.total)}% of it{" "}
           <span className="t3">
-            {cats.prevTotal > 0 ? `(${was}% the week before)` : ""}
+            {canCompare(cats) && cats.prevTotal > 0 ? `(${was}% the week before)` : ""}
           </span>
         </>
       ),
@@ -454,15 +476,15 @@ export function InsightsPanel({
     items.push({
       icon: "tunnel",
       text:
-        nowS === 0 && prevS === 0 ? (
+        nowS === 0 && (prevS === 0 || !prevOk) ? (
           <>
             Everything went <b>direct</b>{" "}
-            <span className="t3">· no VPN in the last two weeks</span>
+            <span className="t3">· no VPN {prevOk ? "in the last two weeks" : "this week"}</span>
           </>
         ) : (
           <>
             <b>{nowS}%</b> went through a VPN{" "}
-            <span className="t3">({prevS}% the week before)</span>
+            {prevOk && <span className="t3">({prevS}% the week before)</span>}
           </>
         ),
     });
@@ -472,7 +494,7 @@ export function InsightsPanel({
       <div className="hd">
         <h2 id="w-ins">This week</h2>
         <span className="t3" style={{ fontSize: 12 }}>
-          against the week before
+          {prevOk ? "against the week before" : startDay ? `counted since ${dayName(startDay)}` : ""}
         </span>
       </div>
       <div className="bd" style={{ padding: "2px 14px 6px" }}>
@@ -501,7 +523,14 @@ export function InsightsPanel({
 /** Internet: where traffic went, per day: each VPN exit and direct. */
 export function WhereTrafficWent({ o }: { o: Overview }) {
   const [table, setTable] = useState(false);
-  const usage = useFetch("usage-30", () => api.usage(30), 120000).data ?? [];
+  // Usage is recorded per outbound ("azure-psn", one per exit x profile): add it up per exit.
+  const raw = useFetch("usage-30", () => api.usage(30), 120000).data ?? [];
+  const exitOf = (tag: string) => (tag === "direct" ? tag : tag.split("-")[0]);
+  const usage = raw.map((u) => {
+    const byExit: Record<string, number> = {};
+    for (const [k, b] of Object.entries(u.byExit)) byExit[exitOf(k)] = (byExit[exitOf(k)] ?? 0) + b;
+    return { ...u, byExit };
+  });
   const keys = new Set<string>();
   usage.forEach((u) => Object.keys(u.byExit).forEach((k) => keys.add(k)));
   const exits = o.exits.map((e) => e.key).filter((k) => keys.has(k));

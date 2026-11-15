@@ -299,5 +299,5 @@ export type CategoryUsage = {
   sites: { host: string; bytes: number }[]; // top 6
   devices: { id: string; name: string; bytes: number }[]; // top 5
 };
-export type CategoriesView = { from: string; to: string; days: number; total: number; prevTotal: number; categories: CategoryUsage[] };
+export type CategoriesView = { from: string; to: string; days: number; since: string /* first day with site history; "" = none */; total: number; prevTotal: number; categories: CategoryUsage[] };
 export type DevicesDaily = { days: string[]; devices: Record<string, number[]> };

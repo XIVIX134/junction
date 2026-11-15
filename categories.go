@@ -10,6 +10,7 @@ package main
 // GET /api/devices/daily?days=14 -> every device's bytes per day.
 
 import (
+	"database/sql"
 	"net"
 	"net/http"
 	"sort"
@@ -137,6 +138,7 @@ type CategoriesView struct {
 	From       string          `json:"from"` // first day, YYYY-MM-DD (local)
 	To         string          `json:"to"`
 	Days       int             `json:"days"`
+	Since      string          `json:"since"` // the first day with site history, "" = none: comparisons need the period before to be inside it
 	Total      int64           `json:"total"`
 	PrevTotal  int64           `json:"prevTotal"`
 	Categories []CategoryUsage `json:"categories"` // largest first; empty ones left out
@@ -181,6 +183,9 @@ func (s *State) categories(now time.Time, days int, dev string) (CategoriesView,
 	start := s.dayStart(now).AddDate(0, 0, -(days - 1))
 	prevStart := start.AddDate(0, 0, -days)
 	v := CategoriesView{From: day(start), To: day(now), Days: days, Categories: []CategoryUsage{}}
+	var since sql.NullString
+	s.store.db.QueryRow(`SELECT MIN(day) FROM hosts_day`).Scan(&since)
+	v.Since = since.String
 	type acc struct {
 		bytes, prev int64
 		sites       map[string]int64

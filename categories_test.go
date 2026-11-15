@@ -68,6 +68,9 @@ func TestCategoriesAndDaily(t *testing.T) {
 	if v.Categories[0].Devices[0].Name != "Laptop" || v.Categories[0].Sites[0].Host != "rr1.googlevideo.com" {
 		t.Fatalf("top of video: %s", b)
 	}
+	if v.Since != day(-30) {
+		t.Fatalf("since: %q, want %q", v.Since, day(-30))
+	}
 	only, _ := s.categories(now, 7, "bb")
 	if only.Total != 2.5e9 {
 		t.Fatalf("one device: %+v", only)

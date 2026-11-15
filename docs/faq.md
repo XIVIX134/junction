@@ -10,6 +10,9 @@ Yes. Usage per device, limits, schedules, pausing and the Health page all work w
 **What does it know about my traffic?**
 Which device talked to which site (from DNS and TLS names), how much, and when. Never the content. Everything stays on the box: there's no cloud service and no telemetry.
 
+**How does it know what traffic is video, social media and so on?**
+From the site names: every name is matched against a built-in list of domains (YouTube's video servers count as video, WhatsApp's as messaging, and so on). Traffic to a bare IP address shows as "No site name" rather than a guess. If a site lands in the wrong category, open an issue or a pull request against `categories.go`.
+
 **Does it replace my router?**
 No. It sits next to it. Devices use Junction as their gateway (it can hand out addresses itself, or you change one setting on your router), and Junction sends traffic on to your router.
 
