@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { api2, ApiError } from "../api/client";
-import type { ExitDraft, ExitTest, Reservation, Settings as S, SettingsPatch, StartingName } from "../api/types";
+import type { ExitDraft, ExitTest, Reservation, Settings as S, SettingsPatch, SettingsSaved, StartingName } from "../api/types";
 import { bytes, dmy, hm } from "../fmt";
 import { Link } from "../router";
 import { Sw } from "../ui";
@@ -10,7 +10,7 @@ import { Field, NumField, Panel, Row, Seg } from "./SettingsParts";
 // DHCP and VPN exits. Saving writes config.json (a backup is kept next to it);
 // values read only at start restart Junction, which traffic doesn't depend on.
 
-export type P = { s: S; apply: (p: SettingsPatch, done?: string) => Promise<void>; setFull?: (s: S) => void };
+export type P = { s: S; apply: (p: SettingsPatch, done?: string) => Promise<void>; setFull?: (s: SettingsSaved, done: string) => void };
 
 const Restarts = () => <span className="tag" title="Junction restarts to apply this: a few seconds, traffic isn't affected">restarts Junction</span>;
 
@@ -194,7 +194,7 @@ export function Vpn({ s, apply, setFull }: P) {
           </button>
         }
       >
-        {adding && <AddExit onDone={(n) => (setFull?.(n), setAdding(false))} onCancel={() => setAdding(false)} />}
+        {adding && <AddExit onDone={(n) => (setFull?.(n, "Exit added."), setAdding(false))} onCancel={() => setAdding(false)} />}
         {v.exits.length ? (
           <div className="scroll-x">
             <table className="tb compact">
@@ -220,11 +220,11 @@ export function Vpn({ s, apply, setFull }: P) {
       </Panel>
       <Panel title="Profiles" right={<span>sing-box selectors vpn-&lt;profile&gt;</span>}>
         <div className="note" style={{ padding: "10px 0 4px" }}>
-          A device on VPN follows a profile. Each profile can use a different exit, and is checked against a site you choose (so an exit that blocks that site counts as down for it).
+          A device on VPN follows a profile, and each profile can use a different exit. A profile can also have a site name: its connections to the exits use that name (TLS SNI), for VPN servers or ISPs that treat traffic by name. Exits without TLS, like WireGuard, ignore it.
         </div>
         {v.profiles.map((p) => (
           <Row key={p.name} k={p.name} hint={p.name === v.defaultProfile ? "the default profile" : undefined}>
-            <Field label={`Check site for ${p.name}`} width={240} value={p.checkSite} placeholder="any site (cp.cloudflare.com)" onSave={(checkSite) => apply({ vpn: { profiles: v.profiles.map((x) => (x.name === p.name ? { ...x, checkSite } : x)) } })} />
+            <Field label={`Site name for ${p.name}`} width={240} value={p.checkSite} placeholder="none: the exit's own" onSave={(checkSite) => apply({ vpn: { profiles: v.profiles.map((x) => (x.name === p.name ? { ...x, checkSite } : x)) } })} />
             {p.name !== v.defaultProfile && (
               <>
                 <button type="button" className="btn sm ghost" onClick={() => apply({ vpn: { defaultProfile: p.name } }, `${p.name} is the default profile.`)}>
@@ -270,7 +270,7 @@ export function Vpn({ s, apply, setFull }: P) {
   );
 }
 
-function ExitRow({ e, apply, setFull }: { e: S["vpn"]["exits"][number]; apply: P["apply"]; setFull?: (s: S) => void }) {
+function ExitRow({ e, apply, setFull }: { e: S["vpn"]["exits"][number]; apply: P["apply"]; setFull?: P["setFull"] }) {
   const [confirm, setConfirm] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   return (
@@ -291,7 +291,7 @@ function ExitRow({ e, apply, setFull }: { e: S["vpn"]["exits"][number]; apply: P
               className="btn sm danger"
               onClick={async () => {
                 try {
-                  setFull?.(await api2.removeExit(e.key));
+                  setFull?.(await api2.removeExit(e.key), "Exit removed.");
                 } catch (x) {
                   setErr(x instanceof ApiError ? x.message : "Couldn't remove it.");
                 }
@@ -314,7 +314,7 @@ function ExitRow({ e, apply, setFull }: { e: S["vpn"]["exits"][number]; apply: P
   );
 }
 
-function AddExit({ onDone, onCancel }: { onDone: (s: S) => void; onCancel: () => void }) {
+function AddExit({ onDone, onCancel }: { onDone: (s: SettingsSaved) => void; onCancel: () => void }) {
   const [d, setD] = useState<ExitDraft>({ name: "", kind: "wireguard", text: "" });
   const [test, setTest] = useState<ExitTest | null>(null);
   const [busy, setBusy] = useState<"test" | "save" | null>(null);

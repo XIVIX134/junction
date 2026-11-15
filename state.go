@@ -92,6 +92,8 @@ type State struct {
 	restart      func(why string) // exit so the supervisor starts Junction again with new settings
 	restartOnce  sync.Once
 	update       updateState
+	cfgPath      string     // config.json, changed from Settings
+	settingsMu   sync.Mutex // one settings change at a time
 }
 
 func newState(cfg Config, store *Store) (*State, error) {
@@ -242,7 +244,10 @@ func (s *State) startLoops(ctx context.Context) {
 	go s.every(ctx, 30*time.Second, func(context.Context) { s.pollDirect() })
 	go s.every(ctx, time.Minute, s.sampleExits)
 	go s.every(ctx, 30*time.Second, func(context.Context) { s.flush() })
-	go s.every(ctx, 6*time.Hour, func(context.Context) { s.store.prune(time.Now()) })
+	go s.every(ctx, 6*time.Hour, func(context.Context) {
+		s.store.prune(time.Now(), s.settingInt("usage_days", defaultUsageDays), s.settingInt("sites_days", defaultSitesDays))
+	})
+	go s.every(ctx, time.Hour, func(context.Context) { s.autoRenewNow() })
 	if s.cfg.DHCPListen == nil || *s.cfg.DHCPListen {
 		go s.listenDHCP(ctx)
 	}

@@ -14,3 +14,5 @@ func diskSpace(string) (free, total uint64, err error) {
 }
 
 func detach(*exec.Cmd) {}
+
+func sighup(pid int) error { return errors.New("not on Linux") }

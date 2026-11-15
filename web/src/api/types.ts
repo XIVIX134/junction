@@ -213,7 +213,7 @@ export type Settings = {
   } | null; // null: dnsmasq isn't installed (the setup script adds it)
   vpn: {
     exits: ExitInfo[];
-    profiles: { name: string; checkSite: string }[];
+    profiles: { name: string; checkSite: string /* site name (TLS SNI) its exit connections use; "" = the exit's own */ }[];
     defaultProfile: string;
     failover: {
       enabled: boolean;

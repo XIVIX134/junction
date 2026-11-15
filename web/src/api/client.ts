@@ -135,10 +135,10 @@ export const STREAM_URL = "/api/stream";
 // ---- v1.6: settings, health, setup, login ----
 export const api2 = {
   settings: () => request<Settings>("GET", "/api/settings"),
-  saveSettings: (p: SettingsPatch) => request<SettingsSaved>("PUT", "/api/settings", p),
+  saveSettings: (p: SettingsPatch) => request<SettingsSaved>("PUT", "/api/settings", p, 60000), // profiles and DHCP wait for sing-box/dnsmasq
   testExit: (d: ExitDraft) => request<ExitTest>("POST", "/api/settings/exits/test", d, 30000),
   addExit: (d: ExitDraft) => request<SettingsSaved>("POST", "/api/settings/exits", d, 60000),
-  removeExit: (key: string) => request<SettingsSaved>("DELETE", `/api/settings/exits/${encodeURIComponent(key)}`),
+  removeExit: (key: string) => request<SettingsSaved>("DELETE", `/api/settings/exits/${encodeURIComponent(key)}`, undefined, 60000),
   backupURL: "/api/backup",
   setPassword: (password: string) => request<Settings>("POST", "/api/settings/password", { password }),
   health: () => request<Health>("GET", "/api/health"),

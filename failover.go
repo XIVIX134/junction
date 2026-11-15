@@ -88,8 +88,7 @@ func loadFailover(cfg Config, s *State) (*Failover, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := foConfig{ProbeURL: "http://cp.cloudflare.com", ProbeInterval: 10, ProbeTimeout: 3, FailureThreshold: 3,
-		SuccessThreshold: 6, RecoveryCooldown: 600, StatePath: "/var/lib/junction/failover-state.json", DefaultProfile: "default"}
+	c := foDefaults()
 	if err := json.Unmarshal(b, &c); err != nil {
 		return nil, err
 	}
@@ -572,4 +571,9 @@ func (f *Failover) restoreHealth(raw map[string]any) {
 		}
 		p.lastErr, _ = h["last_error"].(string)
 	}
+}
+
+func foDefaults() foConfig {
+	return foConfig{ProbeURL: "http://cp.cloudflare.com", ProbeInterval: 10, ProbeTimeout: 3, FailureThreshold: 3,
+		SuccessThreshold: 6, RecoveryCooldown: 600, StatePath: "/var/lib/junction/failover-state.json", DefaultProfile: "default"}
 }

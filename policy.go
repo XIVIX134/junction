@@ -95,8 +95,10 @@ func (s *State) applyPolicy() {
 		}
 	}
 	// Write the new lists before shrinking the old one, so a device is never in neither.
-	for _, p := range currentProfiles() {
-		write("/etc/sing-box/profile-"+p+".json", byProfile[p])
+	if perProfile { // before sing-box has been read, the profile names are only a guess
+		for _, p := range currentProfiles() {
+			write(profileListPath(p), byProfile[p])
+		}
 	}
 	write(vpnListPath, vpn)
 	write(pausedListPath, paused)

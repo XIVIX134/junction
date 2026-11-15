@@ -45,8 +45,13 @@ restart() {
 	fi
 }
 
-# The local API port, from "listen" in the config (":80" by default).
-port=$(sed -n 's/.*"listen"[[:space:]]*:[[:space:]]*"[^"]*:\([0-9][0-9]*\)".*/\1/p' "$cfg" 2>/dev/null | head -n1)
+# The local API port, from "listen" in the config (":80" by default). The new
+# binary reads it (the config has other "listen" keys, like the failover's);
+# older ones don't know -print-listen: then a top-level key at two spaces.
+listen=$("$new" -print-listen -config "$cfg" 2>/dev/null) || listen=""
+[ -n "$listen" ] || listen=$(sed -n 's/^ \{0,2\}"listen"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$cfg" 2>/dev/null | head -n1)
+port=${listen##*:}
+case "$port" in '' | *[!0-9]*) port=80 ;; esac
 url="http://127.0.0.1:${port:-80}/api/session"
 answers() {
 	if command -v curl >/dev/null 2>&1; then

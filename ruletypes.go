@@ -10,7 +10,7 @@ import (
 // VPN profiles are sing-box's per-profile selectors, "vpn-<name>" (vpn-active
 // is the global one). fallbackProfiles are used until sing-box has been read,
 // and when its config has no per-profile selectors.
-var fallbackProfiles = []string{"psn", "moe", "gaming"}
+var fallbackProfiles = []string{"default"}
 
 var (
 	profilesMu    sync.RWMutex

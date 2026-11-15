@@ -209,23 +209,13 @@ func (s *State) checkBackup() HealthCheck {
 }
 
 func (s *State) checkDHCP() HealthCheck {
-	d := s.dhcpInfo()
+	d := s.dhcpSettings()
 	if d == nil || !d.On {
 		return hc("dhcp", "DHCP", "off", "Not used here: the router hands out addresses")
 	}
-	n := 0
-	if b, err := os.ReadFile(s.cfg.DnsmasqLeases); err == nil {
-		now := time.Now().Unix()
-		for _, l := range strings.Split(string(b), "\n") {
-			var exp int64
-			if _, err := fmt.Sscanf(l, "%d", &exp); err == nil && (exp == 0 || exp > now) {
-				n++
-			}
-		}
-	}
-	detail := fmt.Sprintf("dnsmasq · %d leases", n)
-	if d.Pool != "" {
-		detail += " · pool " + d.Pool
+	detail := fmt.Sprintf("dnsmasq · %d leases", d.Leases)
+	if p := poolText(d.PoolStart, d.PoolEnd); p != "" {
+		detail += " · pool " + p
 	}
 	return hc("dhcp", "DHCP", "ok", detail)
 }

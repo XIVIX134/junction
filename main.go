@@ -29,6 +29,7 @@ func main() {
 	cfgPath := flag.String("config", "/etc/junction/config.json", "config file")
 	resetPw := flag.Bool("reset-password", false, "forget the sign-in password, turn sign-in off, and exit")
 	showVersion := flag.Bool("version", false, "print the version and exit")
+	showListen := flag.Bool("print-listen", false, "print the address the web page is served on (from the config) and exit")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println(version)
@@ -38,6 +39,10 @@ func main() {
 	cfg, err := loadConfig(*cfgPath)
 	if err != nil {
 		log.Fatalf("config: %v", err)
+	}
+	if *showListen { // for safe-update.sh
+		fmt.Println(cfg.Listen)
+		return
 	}
 	store, err := openStore(cfg.DB)
 	if err != nil {
@@ -58,6 +63,7 @@ func main() {
 		log.Fatalf("state: %v", err)
 	}
 	state.base = base
+	state.cfgPath = *cfgPath
 	if detected {
 		t := time.Now()
 		state.gwDetectedAt = &t
@@ -74,13 +80,13 @@ func main() {
 		stop()
 	}
 	if cfg.FailoverEnabled {
-		fo, err := loadFailover(cfg, state)
-		if err != nil {
-			log.Fatalf("failover: %v", err)
+		if fo, err := loadFailover(cfg, state); err != nil {
+			log.Printf("failover: not running: %v", err)
+		} else {
+			state.fo = fo
+			go fo.run(ctx)
+			log.Printf("failover: running (%d endpoints)", len(fo.cfg.Endpoints))
 		}
-		state.fo = fo
-		go fo.run(ctx)
-		log.Printf("failover: running (%d endpoints)", len(fo.cfg.Endpoints))
 	}
 	state.run(ctx)
 	if cfg.RouterURL != "" {

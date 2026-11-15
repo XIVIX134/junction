@@ -145,7 +145,7 @@ func (s *State) versionInfo() HealthVersion {
 			}
 		}
 	}
-	if s.cfg.UpdateURL != "" {
+	if s.updateChecks() {
 		if !u.checking && time.Since(u.checkedAt) > updateCheckEvery {
 			u.checking = true
 			go s.checkForUpdate()
@@ -405,12 +405,17 @@ func (s *State) installUpdate(ctx context.Context, v string, done func()) error 
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(safeUpdateScript, dir)
+	// The release's own safe-update.sh when it has one (it may know more than the installed one).
+	script := safeUpdateScript
+	if p := filepath.Join(dir, "gateway", "safe-update.sh"); fileExists(p) {
+		script = p
+	}
+	cmd := exec.Command("/bin/sh", script, dir)
 	cmd.Stdout, cmd.Stderr = logf, logf
 	detach(cmd) // it restarts Junction: it must outlive this process
 	if err := cmd.Start(); err != nil {
 		logf.Close()
-		return fmt.Errorf("couldn't start %s: %v", filepath.Base(safeUpdateScript), err)
+		return fmt.Errorf("couldn't start %s: %v", filepath.Base(script), err)
 	}
 	go func() {
 		cmd.Wait()
@@ -445,7 +450,7 @@ func (a *API) postUpdate(w http.ResponseWriter, r *http.Request) {
 		fail(w, 502, "Couldn't install "+body.Version+": "+err.Error()+".")
 		return
 	}
-	log.Printf("update: %s handed to %s", body.Version, safeUpdateScript)
+	log.Printf("update: %s handed to safe-update.sh", body.Version)
 	s.update.mu.Lock()
 	s.update.pending = &HealthUpdate{Version: body.Version, At: time.Now().UTC().Format(time.RFC3339), Result: "pending"}
 	s.update.mu.Unlock()

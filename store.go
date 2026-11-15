@@ -332,10 +332,12 @@ func (s *Store) wireRows(from, to time.Time) (map[int64]int64, error) {
 	return m, rows.Err()
 }
 
-func (s *Store) prune(now time.Time) {
-	s.db.Exec(`DELETE FROM usage_hour WHERE hour < ?`, now.AddDate(0, 0, -400).Unix())
-	s.db.Exec(`DELETE FROM wire_hour WHERE hour < ?`, now.AddDate(0, 0, -400).Unix())
-	s.db.Exec(`DELETE FROM hosts_day WHERE day < ?`, now.AddDate(0, 0, -35).Format("2006-01-02"))
+// prune forgets usage older than usageDays and site lists older than sitesDays
+// (Settings, Data). The bundle's wire counts stay at least 100 days.
+func (s *Store) prune(now time.Time, usageDays, sitesDays int) {
+	s.db.Exec(`DELETE FROM usage_hour WHERE hour < ?`, now.AddDate(0, 0, -usageDays).Unix())
+	s.db.Exec(`DELETE FROM wire_hour WHERE hour < ?`, now.AddDate(0, 0, -max(usageDays, 100)).Unix())
+	s.db.Exec(`DELETE FROM hosts_day WHERE day < ?`, now.AddDate(0, 0, -sitesDays).Format("2006-01-02"))
 }
 
 // --- settings ---

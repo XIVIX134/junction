@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { api2, ApiError } from "../api/client";
-import type { Settings as S, SettingsPatch } from "../api/types";
+import type { Settings as S, SettingsPatch, SettingsSaved } from "../api/types";
 import { BrandMark } from "../components/Brand";
 import { useSettings, useTheme, type ThemeMode } from "../prefs";
 import { Link, useLocation } from "../router";
@@ -30,22 +30,26 @@ export function Settings() {
   const sec: Section = SECTIONS.some(([k]) => k === hash) ? hash : "general";
   const [msg, setMsg] = useState<{ ok: boolean; t: string } | null>(null);
 
+  async function settle(r: SettingsSaved, done: string) {
+    set(r);
+    if (r.restarting) {
+      // Junction restarts to apply it (traffic isn't affected); read it back once it's up.
+      setMsg({ ok: true, t: "Saved. Junction is restarting to apply it…" });
+      for (let i = 0; i < 20; i++) {
+        await new Promise((res) => setTimeout(res, 1500));
+        try {
+          await reload();
+          break;
+        } catch {}
+      }
+    }
+    setMsg({ ok: true, t: done });
+  }
+
   async function apply(p: SettingsPatch, done = "Saved.") {
     setMsg(null);
     try {
-      const r = await save(p);
-      if (r.restarting) {
-        // Junction restarts to apply it (traffic isn't affected); read it back once it's up.
-        setMsg({ ok: true, t: "Saved. Junction is restarting to apply it…" });
-        for (let i = 0; i < 20; i++) {
-          await new Promise((res) => setTimeout(res, 1500));
-          try {
-            await reload();
-            break;
-          } catch {}
-        }
-        setMsg({ ok: true, t: done });
-      } else setMsg({ ok: true, t: done });
+      await settle(await save(p), done);
     } catch (e) {
       setMsg({ ok: false, t: e instanceof ApiError ? e.message : "Couldn't save that." });
     }
@@ -74,7 +78,7 @@ export function Settings() {
             {sec === "general" && <General s={s} apply={apply} />}
             {sec === "network" && <Network s={s} apply={apply} />}
             {sec === "dhcp" && <Dhcp s={s} apply={apply} />}
-            {sec === "vpn" && <Vpn s={s} apply={apply} setFull={set} />}
+            {sec === "vpn" && <Vpn s={s} apply={apply} setFull={(r, done) => void settle(r, done)} />}
             {sec === "bundle" && <Bundle s={s} apply={apply} />}
             {sec === "access" && <Access s={s} apply={apply} />}
             {sec === "updates" && <Updates s={s} apply={apply} />}

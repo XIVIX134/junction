@@ -273,8 +273,12 @@ Types are in `web/src/api/types.ts` (section "v1.6"): `Settings`, `SettingsPatch
 | Method | Path | |
 |---|---|---|
 | GET | `/api/settings` | `Settings` |
-| PUT | `/api/settings` | body `SettingsPatch` (any subset; missing = unchanged) → `Settings`. `brand.image`: a `data:` URL (PNG, JPEG, WebP or SVG, at most 300 KB), `null` or `""` removes it. `access.required: true` needs a password first (400). Changing `timezone`, `network.gatewayIP` or `network.lan` restarts Junction about 1 s after the answer (the service supervisor starts it again; traffic isn't affected): the app should expect the API to be away for a few seconds. |
+| PUT | `/api/settings` | body `SettingsPatch` (any subset; missing = unchanged) → `SettingsSaved` (`Settings` + `restarting`). The whole patch is checked first (400 with a message); then sing-box (profiles), the DHCP server, `config.json` and the settings table are changed, in that order. `brand.image`: a `data:` URL (PNG, JPEG, WebP or SVG, at most 300 KB), `null` or `""` removes it. `access.required: true` needs a password first (400). Anything stored in `config.json` (network card, router, backup, failover, exits, update address, advanced, starting names), `timezone`, `network.gatewayIP` and `network.lan` restart Junction about 1 s after the answer (`restarting: true`; the service supervisor starts it again, traffic isn't affected): the app reads the settings again once it's back. Brand, access, default profile, DHCP, bundle, data and update checks apply without a restart. See "Settings writes" below. |
 | POST | `/api/settings/password` | body `{ password }` (8+ characters) → `Settings`. Stored as PBKDF2-SHA256 (600k rounds); signs out every other browser. |
+| POST | `/api/settings/exits/test` | body `ExitDraft` `{ name, kind: "wireguard" | "outbound", text }` → `ExitTest` `{ ok, message, latencyMs, server }`. Runs the exit in a separate, temporary sing-box (the running one's binary) for up to 25 s and fetches the failover's check address through it. 400 when the paste can't be read. |
+| POST | `/api/settings/exits` | body `ExitDraft` → `SettingsSaved` (restarting). Adds the exit to sing-box's config (see below), then to config.json's `failover.endpoints`. The key is made from the name (lowercase letters and digits, unique). |
+| DELETE | `/api/settings/exits/{key}` | → `SettingsSaved` (restarting). Removes the exit's outbounds, probes and selector entries; with no exits left, `failover_enabled` is turned off. 404 for an unknown key. |
+| GET | `/api/backup` | `junction-backup-<date>.tar.gz`: `junction.db` (a consistent copy, sign-in sessions removed), `config.json` (without `router_password` and the failover's `token`/`clash_secret`) and a README. VPN keys live in sing-box's config, which isn't included. |
 | GET | `/api/session` | `Session` `{ required, signedIn }` (always public) |
 | POST | `/api/login` | body `{ password }` → `Session`, sets the `junction_session` cookie (HttpOnly, SameSite=Strict, lasts `access.sessionDays`, 0 = until signed out). 401 wrong password, 409 no password set, 429 after 5 wrong passwords in a minute from one address. |
 | POST | `/api/logout` | → `Session`; ends this browser's session |
@@ -287,8 +291,22 @@ When a password is set and `access.required` is on, every `/api/*` call except s
 
 `Overview` gains `brand` (as `Settings.brand`), `gatewayIP` and `timezone`, so the app needn't hardcode them.
 
-New config keys (all optional): `gateway_ip` (default: keepalived's floating address, else the interface's first IPv4), `default_profile`, `brand_name` ("Junction"), `backup_name` ("Backup"), `backup_ip` (default: keepalived's `unicast_peer`), `update_url`. `failover_api` defaults to `http://<gateway_ip>:7070/api/status`. VPN profiles are sing-box's `vpn-<name>` selectors (psn, moe, gaming until sing-box has been read or when there are none); exit names come from the failover config's endpoints.
+New config keys (all optional): `gateway_ip` (default: keepalived's floating address, else the interface's first IPv4), `default_profile`, `brand_name` ("Junction"), `backup_name` ("Backup"), `backup_ip` (default: keepalived's `unicast_peer`), `update_url`. `failover_api` defaults to `http://<gateway_ip>:7070/api/status`. VPN profiles are sing-box's `vpn-<name>` selectors (`default` until sing-box has been read or when there are none); exit names come from the failover config's endpoints.
 
 ## v1.7
 
 - The ISP counter (WE, read from my.te.eg) was removed: `/api/isp`, `/api/isp/refresh`, `/api/settings/isp-headers`, `Settings.isp`, `SetupBody.isp`, the `isp` health check, `Bundle.renewedBy` and `BundleEvent.source` are gone; Junction's on-the-wire count is the only counter, and renewals and "set what's left" are logged by hand.
+
+## v1.8: the whole configuration in Settings
+
+`Settings` now covers every config.json key plus DHCP and VPN exits: `network` (`iface`, `ifaces`, `learnNamesFromDHCP`, `router` with `user`/`passwordSet`), `dhcp` (null without Junction's dnsmasq), `vpn.exits` (`ExitInfo`: kind and server read from sing-box), `vpn.profiles` (`{ name, checkSite }`), `vpn.failover`, `bundle.autoRenew`, `updates`, `data`, `advanced`. `Settings.network.dhcp` moved to `Settings.dhcp`. Types: `web/src/api/types.ts`.
+
+### Settings writes
+
+- **config.json** is edited as JSON (unknown keys stay), written via a temporary file and a rename; the previous file is kept as `config.json.prev`. Starting names whose key isn't a MAC are dropped. The first VPN change moves the old separate failover file's settings into config.json's `failover` section (the file is then no longer read).
+- **DHCP** (`dnsmasq.conf`, `reservations.conf`): the new files are checked with `dnsmasq --test`, the old ones kept as `.prev`, and `junction-dhcp` restarted when it runs. If it isn't running again within 10 s, the old files go back and it is restarted. The pool must be inside the LAN and not contain the gateway's address; reservation names become host names (`Living room TV` → `living-room-tv`).
+- **sing-box** (exits, profiles): the layout is setup.sh's: an exit `<key>` has `<key>-<profile>` per profile, selectors `vpn-<profile>` and `vpn-active` list every exit plus `direct`, and the failover checks each exit × profile through a local inbound `probe-<key>-<profile>` (127.0.0.1:221xx). A profile's `checkSite` is the TLS name (SNI) its exit connections use: a profile with one gets a copy of the exit's outbound with that `tls.server_name`; otherwise `<key>-<profile>` is a selector holding the one real outbound (a WireGuard key is never used twice). Each change is checked with `sing-box check`, the old config kept as `config.json.junction-prev`, and sing-box reloaded (SIGHUP, else a service restart). If its API doesn't show the new selectors and traffic through its mixed inbound fails for 20 s, the old config goes back. A profile can't be removed while it's the default, or while a device or rule uses it.
+- **Bundle auto-renew** logs a renewal of `sizeGB` at midnight on `day` (1–28) each month, unless a renewal is already logged within 20 days before it, or the day came before auto-renew was switched on.
+- **Data**: `usageDays` (30–1000, default 400) and `sitesDays` (7–400, default 35) are what the daily clean-up keeps; the bundle's wire counts stay at least 100 days.
+
+`junctiond -print-listen` prints the configured `listen` address (safe-update.sh uses it to find the port). The in-app updater runs the release's own `gateway/safe-update.sh` when it has one.

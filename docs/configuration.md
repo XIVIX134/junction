@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Configuration
 
-Junction reads `/etc/junction/config.json` at start (`junctiond -config <path>` to use another file). `setup.sh` writes it for you; every key is optional. Most of these can also be changed in **Settings**, which stores them in Junction's database and takes precedence over the file.
+Junction reads `/etc/junction/config.json` at start (`junctiond -config <path>` to use another file). `setup.sh` writes it for you; every key is optional. **Settings** in the app changes all of them: it edits this file (keeping a copy as `config.json.prev`) and restarts Junction to apply it, which doesn't affect traffic. Timezone, gateway address and network range set in the app are stored in Junction's database and take precedence over the file.
 
 ## Keys
 
@@ -50,4 +50,4 @@ Junction reads `/etc/junction/config.json` at start (`junctiond -config <path>` 
 - **endpoints**: one per VPN exit. `key` matches the sing-box outbound tags `<key>-<profile>`; `name` is what the app shows.
 - **probe_ports**: a local port per profile that sing-box forwards through that exit, used to check it (`setup.sh` creates them).
 - An exit is marked down after `failure_threshold` failed checks in a row, and trusted again after `success_threshold` good ones and `recovery_cooldown_seconds`.
-- **profiles**: the sing-box selectors `vpn-<profile>`. The value is an optional site to check that profile against.
+- **profiles**: the sing-box selectors `vpn-<profile>`. The value is the profile's optional site name: the TLS name (SNI) its connections to the exits use, for VPN servers or ISPs that treat traffic by name (Settings → VPN changes it in sing-box's config too).

@@ -20,3 +20,5 @@ func diskSpace(path string) (free, total uint64, err error) {
 func detach(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 }
+
+func sighup(pid int) error { return syscall.Kill(pid, syscall.SIGHUP) }

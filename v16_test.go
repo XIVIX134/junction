@@ -283,7 +283,7 @@ func TestSettingsPut(t *testing.T) {
 		t.Fatalf("%d %v", rec.Code, err)
 	}
 	if st.Brand.Name != "Junction" || st.Brand.Letter != "J" || st.Brand.Image != nil || st.Network.GatewayIP != "192.168.1.4" ||
-		st.Access.SessionDays != 30 || st.Network.Router != nil || st.Network.DHCP != nil {
+		st.Access.SessionDays != 30 || st.Network.Router != nil || st.DHCP != nil {
 		t.Fatalf("defaults: %+v", st)
 	}
 	// null vs missing, as the app expects
@@ -389,7 +389,7 @@ func TestNetworkFiles(t *testing.T) {
 	if gw := detectGatewayIP("no-such-if"); gw != "192.168.1.4" {
 		t.Fatalf("gateway from keepalived: %q", gw)
 	}
-	if b := s.backupInfo(); b == nil || b.IP != "192.168.1.3" || b.Name != "Backup" {
+	if b := s.backupInfo(s.base); b == nil || b.IP != "192.168.1.3" || b.Name != "Backup" {
 		t.Fatalf("backup: %+v", b)
 	}
 
@@ -398,10 +398,9 @@ func TestNetworkFiles(t *testing.T) {
 	os.WriteFile(dnsmasqConf, []byte("interface=eth0\ndhcp-range=set:pool,192.168.1.100,192.168.1.179,255.255.255.0,12h\n"), 0o644)
 	os.WriteFile(reservationsConf, []byte("# fixed\ndhcp-host=aa:bb:cc:dd:ee:ff,192.168.1.50,tv\ndhcp-host=aa:bb:cc:dd:ee:01,192.168.1.51\n"), 0o644)
 	os.WriteFile(s.cfg.DnsmasqLeases, []byte(""), 0o644)
-	off := false
-	s.cfg.DHCPListen = &off
-	d := s.dhcpInfo()
-	if d == nil || !d.On || d.Pool != ".100 – .179" || d.LeaseHours != 12 || d.Reservations != 2 {
+	os.WriteFile(dnsmasqConf, []byte("interface=eth0\ndhcp-range=set:pool,192.168.1.100,192.168.1.179,255.255.255.0,12h\nconf-file="+reservationsConf+"\n"), 0o644)
+	d := s.dhcpSettings()
+	if d == nil || d.PoolStart != "192.168.1.100" || d.PoolEnd != "192.168.1.179" || d.LeaseHours != 12 || len(d.Reservations) != 2 || d.Reservations[0].Name != "tv" {
 		t.Fatalf("dhcp: %+v", d)
 	}
 	for in, want := range map[string]float64{"30m": 0.5, "1d": 24, "infinite": 0, "3600": 1} {
@@ -409,7 +408,7 @@ func TestNetworkFiles(t *testing.T) {
 			t.Fatalf("lease %s: %v", in, h)
 		}
 	}
-	if p, _ := parseDHCPRange("10.0.0.10,10.0.1.20,24h"); p != "10.0.0.10 – 10.0.1.20" {
+	if p := poolText("10.0.0.10", "10.0.1.20"); p != "10.0.0.10 – 10.0.1.20" {
 		t.Fatalf("pool across subnets: %q", p)
 	}
 
@@ -425,7 +424,7 @@ func TestNetworkFiles(t *testing.T) {
 func TestProfilesFromSelectors(t *testing.T) {
 	t.Cleanup(func() { setProfiles(nil, nil) })
 	setProfiles(nil, nil)
-	if !validProfile("psn") || perProfileSelectors() {
+	if !validProfile("default") || perProfileSelectors() {
 		t.Fatal("fallback profiles")
 	}
 	setProfiles(map[string]string{"vpn-active": "x", "vpn-work": "", "vpn-home": "", "vpn-zzz": "", "dns": ""}, []string{"direct", "vpn-home", "vpn-work"})
