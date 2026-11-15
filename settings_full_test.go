@@ -609,3 +609,82 @@ func TestUpdateChecksDefaultToOfficialReleases(t *testing.T) {
 		t.Fatalf("after the check: %+v", st.Updates)
 	}
 }
+
+// TestEveryControlShowsWhatWasSaved: each value the Settings screen can send is
+// in the next GET /api/settings (the bug class "saved, but the switch shows off").
+func TestEveryControlShowsWhatWasSaved(t *testing.T) {
+	s, dir := vpnState(t)
+	s.restart = func(string) {}
+	h := testHandler(s)
+	dbFile := filepath.Join(dir, "other.db")
+	os.WriteFile(dbFile, nil, 0o600)
+	ifc := listIfaces(s.cfg.Interface)[0]
+	get := func() Settings {
+		var st Settings
+		json.Unmarshal(do(h, call{method: "GET", path: "/api/settings"}).Body.Bytes(), &st)
+		return st
+	}
+	type c struct {
+		patch string
+		ok    func(Settings) bool
+	}
+	for _, x := range []c{
+		{`{"brand":{"name":"Home"}}`, func(s Settings) bool { return s.Brand.Name == "Home" && s.Brand.Letter == "H" }},
+		{`{"brand":{"color":"#3fc36f","letter":"Hm"}}`, func(s Settings) bool { return s.Brand.Color == "#3fc36f" && s.Brand.Letter == "Hm" }},
+		{`{"brand":{"letter":""}}`, func(s Settings) bool { return s.Brand.Letter == "H" }},
+		{`{"brand":{"name":""}}`, func(s Settings) bool { return s.Brand.Name == "Junction" }},
+		{`{"timezone":"Europe/Paris"}`, func(s Settings) bool { return s.Timezone == "Europe/Paris" }},
+		{`{"timezone":""}`, func(s Settings) bool { return s.Timezone != "" && s.Timezone != "Europe/Paris" }},
+		{`{"network":{"gatewayIP":"192.168.1.5"}}`, func(s Settings) bool { return s.Network.GatewayIP == "192.168.1.5" }},
+		{`{"network":{"lan":"192.168.1.0/25"}}`, func(s Settings) bool { return s.Network.LAN == "192.168.1.0/25" }},
+		{`{"network":{"lan":""}}`, func(s Settings) bool { return s.Network.LAN == "192.168.1.0/24" }},
+		{`{"network":{"iface":"` + ifc + `"}}`, func(s Settings) bool { return s.Network.Iface == ifc }},
+		{`{"network":{"learnNamesFromDHCP":false}}`, func(s Settings) bool { return !s.Network.LearnNamesFromDHCP }},
+		{`{"network":{"learnNamesFromDHCP":true}}`, func(s Settings) bool { return s.Network.LearnNamesFromDHCP }},
+		{`{"network":{"router":{"url":"https://192.168.1.1","user":"admin","password":"pw"}}}`, func(s Settings) bool {
+			return s.Network.Router != nil && s.Network.Router.URL == "https://192.168.1.1" && s.Network.Router.User == "admin" && s.Network.Router.PasswordSet
+		}},
+		{`{"network":{"router":null}}`, func(s Settings) bool { return s.Network.Router == nil }},
+		{`{"vpn":{"defaultProfile":"games"}}`, func(s Settings) bool { return s.VPN.DefaultProfile == "games" }},
+		{`{"vpn":{"failover":{"enabled":true}}}`, func(s Settings) bool { return s.VPN.Failover.Enabled }},
+		{`{"vpn":{"failover":{"enabled":false}}}`, func(s Settings) bool { return !s.VPN.Failover.Enabled }},
+		{`{"vpn":{"failover":{"checkURL":"https://example.com/ok"}}}`, func(s Settings) bool { return s.VPN.Failover.CheckURL == "https://example.com/ok" }},
+		{`{"vpn":{"failover":{"everySec":30}}}`, func(s Settings) bool { return s.VPN.Failover.EverySec == 30 }},
+		{`{"vpn":{"failover":{"timeoutSec":5}}}`, func(s Settings) bool { return s.VPN.Failover.TimeoutSec == 5 }},
+		{`{"vpn":{"failover":{"downAfter":4}}}`, func(s Settings) bool { return s.VPN.Failover.DownAfter == 4 }},
+		{`{"vpn":{"failover":{"upAfter":8}}}`, func(s Settings) bool { return s.VPN.Failover.UpAfter == 8 }},
+		{`{"vpn":{"failover":{"waitMin":0}}}`, func(s Settings) bool { return s.VPN.Failover.WaitMin == 0 }},
+		{`{"vpn":{"renameExit":{"key":"home","name":"Home VPN"}}}`, func(s Settings) bool { return len(s.VPN.Exits) == 2 && s.VPN.Exits[0].Name == "Home VPN" }},
+		{`{"bundle":{"autoRenew":{"sizeGB":140,"day":5}}}`, func(s Settings) bool {
+			return s.Bundle.AutoRenew != nil && s.Bundle.AutoRenew.SizeGB == 140 && s.Bundle.AutoRenew.Day == 5
+		}},
+		{`{"bundle":{"autoRenew":null}}`, func(s Settings) bool { return s.Bundle.AutoRenew == nil }},
+		{`{"access":{"sessionDays":7}}`, func(s Settings) bool { return s.Access.SessionDays == 7 }},
+		{`{"updates":{"url":"https://api.github.com/repos/someone/junction/releases"}}`, func(s Settings) bool {
+			return s.Updates.URL == "https://api.github.com/repos/someone/junction/releases"
+		}},
+		{`{"updates":{"url":""}}`, func(s Settings) bool { return s.Updates.URL == defaultUpdateURL }},
+		{`{"updates":{"check":false}}`, func(s Settings) bool { return !s.Updates.Check }},
+		{`{"data":{"usageDays":90}}`, func(s Settings) bool { return s.Data.UsageDays == 90 }},
+		{`{"data":{"sitesDays":10}}`, func(s Settings) bool { return s.Data.SitesDays == 10 }},
+		{`{"advanced":{"listen":":8080"}}`, func(s Settings) bool { return s.Advanced.Listen == ":8080" }},
+		{`{"advanced":{"db":"` + filepath.ToSlash(dbFile) + `"}}`, func(s Settings) bool { return s.Advanced.DB == filepath.ToSlash(dbFile) }},
+		{`{"advanced":{"clashAPI":"http://127.0.0.1:9091"}}`, func(s Settings) bool { return s.Advanced.ClashAPI == "http://127.0.0.1:9091" }},
+		{`{"advanced":{"dnsmasqLeases":"/var/lib/misc/other.leases"}}`, func(s Settings) bool { return s.Advanced.DnsmasqLeases == "/var/lib/misc/other.leases" }},
+		{`{"advanced":{"startingNames":[{"mac":"aa:bb:cc:00:00:09","name":"Printer","group":"Office"}]}}`, func(s Settings) bool {
+			return len(s.Advanced.StartingNames) == 1 && s.Advanced.StartingNames[0].Group == "Office"
+		}},
+	} {
+		rec := do(h, call{method: "PUT", path: "/api/settings", body: x.patch})
+		if rec.Code != 200 {
+			t.Fatalf("%s: %d %s", x.patch, rec.Code, rec.Body)
+		}
+		if st := get(); !x.ok(st) {
+			b, _ := json.Marshal(st)
+			t.Fatalf("%s isn't shown after saving: %s", x.patch, b)
+		}
+	}
+	if rec := do(h, call{method: "PUT", path: "/api/settings", body: `{"network":{"backupNmae":"x"}}`}); rec.Code != 400 || !strings.Contains(rec.Body.String(), "backupNmae") {
+		t.Fatalf("unknown setting: %d %s", rec.Code, rec.Body)
+	}
+}

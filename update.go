@@ -45,7 +45,9 @@ type updateState struct {
 	mu        sync.Mutex
 	checkedAt time.Time
 	checking  bool
-	available string // newest release tag, "" = none known
+	available string    // newest release tag, "" = none known
+	lastTry   time.Time // when it last looked (checkedAt is moved back after an error, to retry sooner)
+	lastErr   string    // why the last look failed, "" = it worked
 	pending   *HealthUpdate
 	run       sync.Mutex // one install at a time
 }
@@ -165,13 +167,14 @@ func (s *State) checkForUpdate() {
 	u := &s.update
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	u.checking, u.checkedAt = false, time.Now()
+	u.checking, u.checkedAt, u.lastTry = false, time.Now(), time.Now()
 	if err != nil {
 		log.Printf("update: checking for a new version: %v", err)
+		u.lastErr = shortErr(err)
 		u.checkedAt = time.Now().Add(-updateCheckEvery + 30*time.Minute) // try again in 30 min
 		return
 	}
-	u.available = rel.Tag
+	u.available, u.lastErr = rel.Tag, ""
 }
 
 type ghRelease struct {

@@ -413,7 +413,7 @@ export function Updates({ s, apply }: P) {
     <Panel title="Updates" right={<span>installed {s.version}</span>}>
       <Row k="Check for new versions" hint="Looks at the releases page once every few hours">
         <Sw on={u.check} label="Check for updates" onChange={(check) => apply({ updates: { check } })} />
-        {u.check && <span className="t3">{u.available ? `${u.available} is ready` : u.lastCheck ? `up to date · checked ${hm(u.lastCheck)}` : "not checked yet"}</span>}
+        {u.check && (u.error ? <span className="warnc">{`couldn't check${u.lastCheck ? ` at ${hm(u.lastCheck)}` : ""}: ${u.error}`}</span> : <span className="t3">{u.available ? `${u.available} is ready` : u.lastCheck ? `up to date · checked ${hm(u.lastCheck)}` : "not checked yet"}</span>)}
       </Row>
       <Row k="Releases" hint="Where to look; change it to follow a fork">
         <Field label="Releases address" width={420} value={u.url} onSave={(url) => apply({ updates: { url } })} />

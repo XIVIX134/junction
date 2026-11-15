@@ -266,7 +266,7 @@ const settings = {
   },
   bundle: { autoRenew: { sizeGB: 250, day: 13 } as { sizeGB: number; day: number } | null },
   access: { required: false, passwordSet: false, sessionDays: 30 },
-  updates: { check: true, url: "https://api.github.com/repos/XIVIX134/junction/releases/latest", lastCheck: ago(42), available: null as string | null },
+  updates: { check: true, url: "https://api.github.com/repos/XIVIX134/junction/releases/latest", lastCheck: ago(42), available: null as string | null, error: null as string | null },
   data: { usageDays: 400, sitesDays: 35, dbBytes: 18_400_000 },
   advanced: {
     configPath: "/etc/junction/config.json",

@@ -296,7 +296,7 @@ func TestSettingsPut(t *testing.T) {
 	for body, want := range map[string]int{
 		`{"timezone":"Mars/Olympus"}`:                                      400,
 		`{"brand":{"color":"blue"}}`:                                       400,
-		`{"brand":{"name":""}}`:                                            400,
+		`{"brand":{"name":"12345678901234567890123456789012345678901"}}`:   400,
 		`{"network":{"lan":"10.0.0.0/8"}}`:                                 400,
 		`{"network":{"gatewayIP":"10.0.0.1"}}`:                             400, // outside 192.168.1.0/24
 		`{"brand":{"image":"data:image/gif;base64,R0lGODlhAQABAAAAACw="}}`: 400,
@@ -315,7 +315,7 @@ func TestSettingsPut(t *testing.T) {
 	png := "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("\x89PNG\r\n\x1a\nrest"))
 	rec = do(h, call{method: "PUT", path: "/api/settings", body: `{"brand":{"name":"Casa","color":"#ABCDEF","image":"` + png + `"}}`})
 	json.Unmarshal(rec.Body.Bytes(), &st)
-	if rec.Code != 200 || st.Brand.Name != "Casa" || st.Brand.Color != "#abcdef" || st.Brand.Letter != "J" || st.Brand.Image == nil {
+	if rec.Code != 200 || st.Brand.Name != "Casa" || st.Brand.Color != "#abcdef" || st.Brand.Letter != "C" || st.Brand.Image == nil {
 		t.Fatalf("brand: %d %+v", rec.Code, st)
 	}
 	if ov := s.brand; ov.Name != "Casa" {

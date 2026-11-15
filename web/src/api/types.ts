@@ -227,7 +227,7 @@ export type Settings = {
   };
   bundle: { autoRenew: { sizeGB: number; day: number } | null };
   access: { required: boolean; passwordSet: boolean; sessionDays: number /* 0 = until sign-out */ };
-  updates: { check: boolean; url: string; lastCheck: string | null; available: string | null };
+  updates: { check: boolean; url: string; lastCheck: string | null; available: string | null; error: string | null /* the last check failed */ };
   data: { usageDays: number; sitesDays: number; dbBytes: number };
   advanced: {
     configPath: string;

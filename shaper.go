@@ -28,6 +28,9 @@ type Shaper struct {
 
 // Apply sets the caps: IP -> Mbit/s. Rebuilds only when the set changed.
 func (sh *Shaper) Apply(caps map[string]float64) {
+	if sh == nil { // no shaper (tests, or no tc): nothing to cap
+		return
+	}
 	ips := make([]string, 0, len(caps))
 	for ip, v := range caps {
 		if v > 0 {

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -183,8 +184,16 @@ func (s *State) planPatch(p *SettingsPatch) (*patchPlan, error) {
 		s.mu.RUnlock()
 		if b.Name != nil {
 			n := strings.TrimSpace(*b.Name)
-			if n == "" || utf8.RuneCountInString(n) > 40 {
-				return nil, bad("The name must be 1 to 40 characters.")
+			if n == "" { // back to the configured name
+				if n = s.cfg.BrandName; n == "" {
+					n = "Junction"
+				}
+			}
+			if utf8.RuneCountInString(n) > 40 {
+				return nil, bad("The name can be at most 40 characters.")
+			}
+			if b.Letter == nil && nb.Letter == firstLetter(nb.Name) {
+				nb.Letter = firstLetter(n) // the letter followed the old name: follow the new one
 			}
 			nb.Name = n
 		}
@@ -196,6 +205,9 @@ func (s *State) planPatch(p *SettingsPatch) (*patchPlan, error) {
 		}
 		if b.Letter != nil {
 			l := strings.TrimSpace(*b.Letter)
+			if l == "" {
+				l = firstLetter(nb.Name) // the name's first letter
+			}
 			if n := utf8.RuneCountInString(l); n < 1 || n > 2 {
 				return nil, bad("The badge letter must be 1 or 2 characters.")
 			}
@@ -220,6 +232,12 @@ func (s *State) planPatch(p *SettingsPatch) (*patchPlan, error) {
 	}
 	if p.Timezone != nil {
 		tz := strings.TrimSpace(*p.Timezone)
+		if tz == "" { // back to the config's, else the system's
+			tz = s.base.TimeZone
+			if tz == "" {
+				tz = detectTimezone("UTC")
+			}
+		}
 		if !validTimezone(tz) {
 			return nil, bad("Pick a timezone from the list, like Europe/London.")
 		}
@@ -373,17 +391,21 @@ func (s *State) planNetwork(pl *patchPlan, n *NetworkPatch) error {
 		pl.saves["gateway_ip"] = ip
 	}
 	if n.LAN != nil {
-		lan := checkLAN(*n.LAN)
-		if lan == "" {
-			return bad("The network must look like 192.168.1.0/24 (between /16 and /30).")
+		if strings.TrimSpace(*n.LAN) == "" {
+			pl.saves["lan"] = "" // back to the network card's (config.json, else detected at start)
+		} else {
+			lan := checkLAN(*n.LAN)
+			if lan == "" {
+				return bad("The network must look like 192.168.1.0/24 (between /16 and /30).")
+			}
+			pl.saves["lan"] = lan
 		}
-		pl.saves["lan"] = lan
 	}
 	gw, lan := s.setting("gateway_ip", s.cfg.GatewayIP), s.setting("lan", s.cfg.LAN)
 	if v, ok := pl.saves["gateway_ip"]; ok {
 		gw = v
 	}
-	if v, ok := pl.saves["lan"]; ok {
+	if v, ok := pl.saves["lan"]; ok && v != "" {
 		lan = v
 	}
 	if _, nw, err := net.ParseCIDR(lan); err == nil && gw != "" && !nw.Contains(net.ParseIP(gw)) {
@@ -541,7 +563,7 @@ func (s *State) planAdvanced(pl *patchPlan, listen, db, sbc, clash, leases *stri
 			return nil
 		}
 		p := strings.TrimSpace(*v)
-		if !strings.HasPrefix(p, "/") {
+		if !strings.HasPrefix(p, "/") && !filepath.IsAbs(p) {
 			return bad("%s must be a full path, starting with /.", what)
 		}
 		if mustExist && !fileExists(p) {

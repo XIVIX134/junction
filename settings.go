@@ -132,6 +132,7 @@ type UpdateSettings struct {
 	URL       string  `json:"url"`
 	LastCheck *string `json:"lastCheck"`
 	Available *string `json:"available"`
+	Error     *string `json:"error"` // why the last check failed
 }
 
 type DataSettings struct {
@@ -521,9 +522,13 @@ func (s *State) updateSettings(b Config) UpdateSettings {
 	u := UpdateSettings{Check: s.setting("update_check", b.updateCheckDefault()) == "1", URL: b.updateURL()}
 	s.update.mu.Lock()
 	defer s.update.mu.Unlock()
-	if !s.update.checkedAt.IsZero() {
-		t := s.update.checkedAt.UTC().Format(time.RFC3339)
+	if !s.update.lastTry.IsZero() {
+		t := s.update.lastTry.UTC().Format(time.RFC3339)
 		u.LastCheck = &t
+	}
+	if u.Check && s.update.lastErr != "" {
+		e := s.update.lastErr
+		u.Error = &e
 	}
 	if u.Check && newerVersion(s.update.available, version) {
 		a := s.update.available
@@ -623,8 +628,14 @@ type SettingsSaved struct {
 
 func (a *API) putSettings(w http.ResponseWriter, r *http.Request) {
 	var p SettingsPatch
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 512<<10)).Decode(&p); err != nil {
-		fail(w, 400, "The request body must be JSON with the settings to change (a logo can be at most 300 KB).")
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 512<<10))
+	dec.DisallowUnknownFields() // a setting Junction doesn't know must not look saved
+	if err := dec.Decode(&p); err != nil {
+		msg := "The request body must be JSON with the settings to change (a logo can be at most 300 KB)."
+		if f, ok := strings.CutPrefix(err.Error(), "json: unknown field "); ok {
+			msg = "There is no setting called " + f + "."
+		}
+		fail(w, 400, msg)
 		return
 	}
 	a.s.settingsMu.Lock()
