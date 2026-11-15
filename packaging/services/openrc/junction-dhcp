@@ -1,0 +1,21 @@
+#!/sbin/openrc-run
+# SPDX-License-Identifier: GPL-3.0-or-later
+# shellcheck shell=sh disable=SC2034
+
+name="junction-dhcp"
+description="Junction DHCP server (dnsmasq)"
+supervisor="supervise-daemon"
+command="/usr/sbin/dnsmasq"
+command_args="-k -C /etc/junction/dnsmasq.conf"
+respawn_delay=3
+respawn_max=0
+
+depend() {
+    need net
+    after keepalived
+}
+
+start_pre() {
+    checkpath --directory --mode 0755 /var/lib/misc
+    /usr/sbin/dnsmasq --test -C /etc/junction/dnsmasq.conf >/dev/null
+}

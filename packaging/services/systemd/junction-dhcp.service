@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Unit]
+Description=Junction DHCP server (dnsmasq)
+After=network-online.target keepalived.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=/bin/mkdir -p /var/lib/misc
+ExecStartPre=/usr/sbin/dnsmasq --test -C /etc/junction/dnsmasq.conf
+ExecStart=/usr/sbin/dnsmasq -k -C /etc/junction/dnsmasq.conf
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

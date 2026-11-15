@@ -1,0 +1,29 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# keepalived health check for the Junction gateway (runs every 2 s).
+# Exit 0 = keep the floating gateway address. Exit 1 = hand it to the backup box.
+#
+# Thanks to junction-tproxy's fail-open design this box is still a working (plain)
+# router while sing-box is down, so the check only fails when this box can't route
+# at all, or when sing-box is hooked in yet not passing traffic while the
+# internet itself is fine (if the ISP is down, moving the address helps no one).
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
+MODE=tproxy LAN_IF=eth0 MIXED_PORT=2080 CHECK_URL=http://cp.cloudflare.com/
+# shellcheck disable=SC1091
+[ -r /etc/junction/tproxy.conf ] && . /etc/junction/tproxy.conf
+
+[ "$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null)" = 1 ] || exit 1
+[ "$MODE" = tproxy ] || exit 0
+iptables -w 2 -t mangle -C PREROUTING -i "$LAN_IF" -j SING_BOX_TPROXY >/dev/null 2>&1 || exit 0
+
+fetch() {
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsS -m 3 -o /dev/null ${2:+-x "$2"} "$1" >/dev/null 2>&1
+    else
+        http_proxy="$2" wget -q -T 3 -O /dev/null "$1" >/dev/null 2>&1
+    fi
+}
+fetch "$CHECK_URL" "http://127.0.0.1:$MIXED_PORT" && exit 0
+fetch "$CHECK_URL" && exit 1
+exit 0

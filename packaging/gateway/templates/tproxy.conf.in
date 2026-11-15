@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Settings for /usr/local/sbin/junction-tproxy, written by Junction's setup.sh.
+# MODE=tproxy: devices' traffic goes through sing-box while it is healthy.
+# MODE=router: plain forwarding + NAT only (what uninstall.sh leaves behind).
+MODE=@MODE@
+LAN_IF=@LAN_IF@
+WAN_IF=@WAN_IF@
+LAN_CIDR=@LAN_CIDR@
+TPROXY_PORT=7893
+MIXED_PORT=2080
+MARK=0x1
+TABLE=100
+CLASH_API=http://127.0.0.1:9090
+SINGBOX_CONFIG=/etc/sing-box/config.json
+CHECK_URL=http://cp.cloudflare.com/

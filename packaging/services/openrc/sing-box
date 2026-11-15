@@ -1,0 +1,38 @@
+#!/sbin/openrc-run
+# SPDX-License-Identifier: GPL-3.0-or-later
+# shellcheck shell=sh disable=SC2034
+
+name="sing-box"
+description="sing-box (Junction gateway proxy)"
+supervisor="supervise-daemon"
+command="/usr/local/bin/sing-box"
+command_args="run -c /etc/sing-box/config.json"
+output_log="/var/log/sing-box.log"
+error_log="/var/log/sing-box.log"
+respawn_delay=3
+respawn_max=0
+extra_started_commands="reload"
+
+depend() {
+    need net
+    after firewall
+}
+
+start_pre() {
+    checkpath --directory --mode 0755 /var/lib/sing-box
+    checkpath --file --mode 0644 /var/log/sing-box.log
+    /usr/local/bin/sing-box check -c /etc/sing-box/config.json
+}
+
+reload() {
+    ebegin "Reloading $name"
+    supervise-daemon "$RC_SVCNAME" --signal HUP
+    eend $?
+}
+
+# Fail open at once: unhook TPROXY when sing-box stops (junction-tproxy hooks it
+# back in when sing-box answers again; it also covers crashes and hangs).
+stop_post() {
+    [ -x /usr/local/sbin/junction-tproxy ] && /usr/local/sbin/junction-tproxy disable
+    return 0
+}

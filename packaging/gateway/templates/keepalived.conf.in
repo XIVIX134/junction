@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Junction floating gateway address @VIP@, written by Junction's setup.sh.
+# This box is the primary. Devices use @VIP_ADDR@ as their gateway; when this box
+# dies (or fails /usr/local/sbin/junction-gateway-check) a backup box takes it.
+global_defs {
+    router_id junction-@VRID@
+    script_user root
+    enable_script_security
+    vrrp_garp_master_refresh 60
+}
+
+vrrp_script chk_junction {
+    script "/usr/local/sbin/junction-gateway-check"
+    interval 2
+    timeout 7
+    fall 3
+    rise 10
+}
+
+vrrp_instance JUNCTION {
+    # Start as backup: take the address only once the health check passes.
+    state BACKUP
+    interface @LAN_IF@
+    virtual_router_id @VRID@
+    priority @PRIORITY@
+    advert_int 1
+    preempt_delay 15
+@?PEER@    unicast_src_ip @SELF_IP@
+@?PEER@    unicast_peer {
+@?PEER@        @PEER@
+@?PEER@    }
+    authentication {
+        auth_type PASS
+        auth_pass @AUTH_PASS@
+    }
+    virtual_ipaddress {
+        @VIP@ dev @LAN_IF@
+    }
+@?TRACK@    track_script {
+@?TRACK@        chk_junction
+@?TRACK@    }
+    notify /usr/local/sbin/junction-gateway-notify
+}

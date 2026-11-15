@@ -1,0 +1,261 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# junction-tproxy: the gateway's packet plumbing, fail-open.
+#
+#   junction-tproxy run       stay in the foreground (the service runs this): set up
+#                             forwarding + NAT, then hook TPROXY into PREROUTING only
+#                             while sing-box is healthy, and unhook it when it is not
+#   junction-tproxy setup     forwarding, NAT, policy route, chains (no TPROXY hook)
+#   junction-tproxy enable    hook TPROXY into PREROUTING (traffic goes to sing-box)
+#   junction-tproxy disable   unhook it (traffic is forwarded + NATed: plain router)
+#   junction-tproxy teardown  remove everything this script ever added
+#   junction-tproxy status    print what is in place
+#   junction-tproxy check     exit 0 if sing-box is healthy right now
+#
+# Fail-open: with the PREROUTING hook removed the box is a plain NAT router, so a
+# stopped, crashed or hung sing-box never blackholes the devices that use it.
+# Settings: /etc/junction/tproxy.conf (written by setup.sh). MODE=router keeps
+# only forwarding + NAT (what uninstall.sh leaves behind).
+
+CONF="${JUNCTION_TPROXY_CONF:-/etc/junction/tproxy.conf}"
+
+MODE=tproxy
+LAN_IF=eth0
+WAN_IF=
+LAN_CIDR=
+TPROXY_PORT=7893
+MIXED_PORT=2080
+MARK=0x1
+TABLE=100
+CLASH_API=http://127.0.0.1:9090
+SINGBOX_CONFIG=/etc/sing-box/config.json
+CHECK_URL=http://cp.cloudflare.com/
+INTERVAL=2
+# shellcheck disable=SC1090
+[ -r "$CONF" ] && . "$CONF"
+[ -n "$WAN_IF" ] || WAN_IF="$LAN_IF"
+
+# Never send our own checks through a proxy from the environment.
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY
+
+PRIVATE="0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4 240.0.0.0/4"
+
+log() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) junction-tproxy: $*"; }
+ipt() { iptables -w 5 "$@"; }
+# Run quietly; the caller decides whether a failure matters.
+q() { "$@" >/dev/null 2>&1; }
+
+# hook TABLE CHAIN-TO-HOOK-INTO JUMP-TARGET [match...]: insert at position 1 once.
+hook_first() {
+    t=$1 base=$2 target=$3
+    shift 3
+    q ipt -t "$t" -C "$base" "$@" -j "$target" || ipt -t "$t" -I "$base" 1 "$@" -j "$target"
+}
+unhook_all() {
+    t=$1 base=$2 target=$3
+    shift 3
+    # Bounded: never spin, whatever iptables answers.
+    for _i in 1 2 3 4 5 6 7 8; do q ipt -t "$t" -D "$base" "$@" -j "$target" || break; done
+}
+new_chain() { q ipt -t "$1" -N "$2"; ipt -t "$1" -F "$2"; }
+drop_chain() { q ipt -t "$1" -F "$2"; q ipt -t "$1" -X "$2"; }
+
+sysctls() {
+    q sysctl -w net.ipv4.ip_forward=1
+    # Never tell devices to skip the gateway and talk to the router directly.
+    for i in all default "$LAN_IF"; do
+        q sysctl -w "net.ipv4.conf.$i.send_redirects=0"
+    done
+    [ "$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null)" = 1 ] || log "WARNING: could not enable net.ipv4.ip_forward"
+}
+
+setup_router() {
+    sysctls
+    # Forwarding allowed for the LAN even if the default FORWARD policy is DROP.
+    new_chain filter JUNCTION_FWD
+    ipt -t filter -A JUNCTION_FWD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+    ipt -t filter -A JUNCTION_FWD -s "$LAN_CIDR" -j ACCEPT
+    hook_first filter FORWARD JUNCTION_FWD
+    # NAT for forwarded traffic (the fail-open path), so replies come back through
+    # this box. TPROXY'd traffic is not forwarded and never reaches this rule.
+    new_chain nat JUNCTION_NAT
+    ipt -t nat -A JUNCTION_NAT -s "$LAN_CIDR" ! -d "$LAN_CIDR" -o "$WAN_IF" \
+        -m addrtype ! --src-type LOCAL -j MASQUERADE
+    hook_first nat POSTROUTING JUNCTION_NAT
+}
+
+setup_tproxy() {
+    # Marked packets are delivered locally (to sing-box's TPROXY socket).
+    ip -4 rule show 2>/dev/null | grep -q "fwmark $MARK lookup $TABLE" ||
+        ip -4 rule add fwmark "$MARK" lookup "$TABLE"
+    ip -4 route replace local 0.0.0.0/0 dev lo table "$TABLE"
+
+    new_chain mangle SING_BOX_TPROXY
+    for _net in $PRIVATE "$LAN_CIDR"; do
+        ipt -t mangle -A SING_BOX_TPROXY -d "$_net" -j RETURN
+    done
+    # Anything addressed to this box itself (its own replies, the floating IP).
+    ipt -t mangle -A SING_BOX_TPROXY -m addrtype --dst-type LOCAL -j RETURN
+    ipt -t mangle -A SING_BOX_TPROXY -p tcp -j TPROXY --on-port "$TPROXY_PORT" --on-ip 127.0.0.1 --tproxy-mark "$MARK"
+    ipt -t mangle -A SING_BOX_TPROXY -p udp -j TPROXY --on-port "$TPROXY_PORT" --on-ip 127.0.0.1 --tproxy-mark "$MARK"
+
+    # Loop guard: only TPROXY-marked packets may reach the TPROXY port. A device
+    # connecting to it directly would make sing-box forward to itself forever.
+    new_chain filter JUNCTION_GUARD
+    ipt -t filter -A JUNCTION_GUARD -p tcp --dport "$TPROXY_PORT" -m mark ! --mark "$MARK" -j REJECT --reject-with tcp-reset
+    ipt -t filter -A JUNCTION_GUARD -p udp --dport "$TPROXY_PORT" -m mark ! --mark "$MARK" -j DROP
+    hook_first filter INPUT JUNCTION_GUARD
+}
+
+do_setup() {
+    [ -n "$LAN_CIDR" ] || { log "LAN_CIDR is not set in $CONF"; return 1; }
+    setup_router || return 1
+    if [ "$MODE" = tproxy ]; then
+        setup_tproxy || return 1
+    else
+        do_teardown_tproxy
+    fi
+}
+
+is_enabled() { q ipt -t mangle -C PREROUTING -i "$LAN_IF" -j SING_BOX_TPROXY; }
+do_enable() {
+    [ "$MODE" = tproxy ] || return 0
+    q ipt -t mangle -L SING_BOX_TPROXY -n || setup_tproxy || return 1
+    is_enabled || ipt -t mangle -A PREROUTING -i "$LAN_IF" -j SING_BOX_TPROXY
+}
+do_disable() {
+    unhook_all mangle PREROUTING SING_BOX_TPROXY -i "$LAN_IF"
+    # Also the un-scoped hook older hand-made setups used.
+    unhook_all mangle PREROUTING SING_BOX_TPROXY
+    return 0
+}
+
+do_teardown_tproxy() {
+    do_disable
+    drop_chain mangle SING_BOX_TPROXY
+    unhook_all filter INPUT JUNCTION_GUARD
+    drop_chain filter JUNCTION_GUARD
+    for _i in 1 2 3 4 5 6 7 8; do q ip -4 rule del fwmark "$MARK" lookup "$TABLE" || break; done
+    q ip -4 route flush table "$TABLE"
+    return 0
+}
+
+do_teardown() {
+    do_teardown_tproxy
+    unhook_all filter FORWARD JUNCTION_FWD
+    drop_chain filter JUNCTION_FWD
+    unhook_all nat POSTROUTING JUNCTION_NAT
+    drop_chain nat JUNCTION_NAT
+    return 0
+}
+
+fetch() { # fetch URL [proxy]: exit 0 if it answers
+    if command -v curl >/dev/null 2>&1; then
+        if [ -n "$2" ]; then curl -fsS -m 5 -o /dev/null -x "$2" "$1" 2>/dev/null
+        else curl -fsS -m 5 -o /dev/null "$1" 2>/dev/null; fi
+    else
+        if [ -n "$2" ]; then http_proxy="$2" wget -q -T 5 -O /dev/null "$1" 2>/dev/null
+        else wget -q -T 5 -O /dev/null "$1" 2>/dev/null; fi
+    fi
+}
+
+api_ok() {
+    s=$(sed -n 's/.*"secret": *"\([^"]*\)".*/\1/p' "$SINGBOX_CONFIG" 2>/dev/null | head -n 1)
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsS -m 2 -o /dev/null -H "Authorization: Bearer $s" "$CLASH_API/version" 2>/dev/null
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q -T 2 -O /dev/null --header="Authorization: Bearer $s" "$CLASH_API/version" 2>/dev/null
+    else
+        pidof sing-box >/dev/null 2>&1
+    fi
+}
+
+# Real traffic through sing-box's local mixed inbound (127.0.0.1 always goes direct).
+# Returns 1 only when sing-box fails AND the internet itself answers.
+traffic_ok() {
+    fetch "$CHECK_URL" "http://127.0.0.1:$MIXED_PORT" && return 0
+    fetch "$CHECK_URL" && return 1
+    return 0
+}
+
+rules_intact() {
+    q ipt -t nat -C POSTROUTING -j JUNCTION_NAT || return 1
+    q ipt -t filter -C FORWARD -j JUNCTION_FWD || return 1
+    [ "$MODE" = tproxy ] || return 0
+    q ipt -t mangle -L SING_BOX_TPROXY -n && q ipt -t filter -C INPUT -j JUNCTION_GUARD
+}
+
+do_run() {
+    do_setup || log "setup failed; will retry"
+    if [ "$MODE" != tproxy ]; then
+        log "router mode: forwarding + NAT only"
+        trap 'exit 0' TERM INT
+        while :; do
+            sleep 30 & wait $!
+            rules_intact || do_setup
+        done
+    fi
+    trap 'do_disable; log "stopped: TPROXY removed, plain routing"; exit 0' TERM INT
+    trap 'do_disable' EXIT
+    fails=0 oks=0 n=0 tbad=0
+    while :; do
+        n=$((n + 1))
+        # Read the real state: sing-box's stop hook may have unhooked it meanwhile.
+        on=0
+        is_enabled && on=1
+        healthy=0
+        if api_ok; then
+            # Every 30 s also push real traffic through it (catches a wedged sing-box
+            # whose API still answers). A failure counts until the next good test.
+            if [ $((n % 15)) -eq 1 ]; then
+                if traffic_ok; then tbad=0; else tbad=1; fi
+            fi
+            [ "$tbad" -eq 0 ] && healthy=1
+        fi
+        if [ "$healthy" -eq 1 ]; then
+            oks=$((oks + 1)) fails=0
+        else
+            fails=$((fails + 1)) oks=0
+        fi
+        if [ "$on" -eq 1 ] && [ "$fails" -ge 3 ]; then
+            do_disable && on=0
+            log "sing-box unhealthy: TPROXY removed, devices are routed directly (no VPN)"
+        elif [ "$on" -eq 0 ] && [ "$oks" -ge 2 ]; then
+            if do_enable; then
+                on=1
+                log "sing-box healthy: TPROXY on"
+            fi
+        fi
+        # Someone flushed the firewall (package upgrade, ufw reload...): rebuild.
+        if [ $((n % 15)) -eq 0 ] && ! rules_intact; then
+            log "rules missing: rebuilding"
+            do_setup && [ "$on" -eq 1 ] && do_enable
+        fi
+        sleep "$INTERVAL" & wait $!
+    done
+}
+
+do_status() {
+    echo "mode:      $MODE"
+    echo "lan:       $LAN_IF $LAN_CIDR (out via $WAN_IF)"
+    echo "forward:   $(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null)"
+    if is_enabled; then echo "tproxy:    ON (devices' traffic goes through sing-box)"
+    else echo "tproxy:    off (plain routing)"; fi
+    if q ipt -t nat -C POSTROUTING -j JUNCTION_NAT; then echo "nat:       on"; else echo "nat:       MISSING"; fi
+    if api_ok; then echo "sing-box:  answering"; else echo "sing-box:  NOT answering"; fi
+}
+
+case "$1" in
+run) do_run ;;
+setup) do_setup ;;
+enable) do_enable ;;
+disable) do_disable ;;
+teardown) do_teardown ;;
+status) do_status ;;
+check) api_ok && traffic_ok ;;
+*)
+    echo "usage: $0 run|setup|enable|disable|teardown|status|check" >&2
+    exit 2
+    ;;
+esac

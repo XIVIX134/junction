@@ -1,0 +1,27 @@
+#!/sbin/openrc-run
+# SPDX-License-Identifier: GPL-3.0-or-later
+# shellcheck shell=sh disable=SC2034
+
+name="junction-tproxy"
+description="Junction TPROXY rules (only while sing-box is healthy) + NAT"
+supervisor="supervise-daemon"
+command="/usr/local/sbin/junction-tproxy"
+command_args="run"
+output_log="/var/log/junction-tproxy.log"
+error_log="/var/log/junction-tproxy.log"
+respawn_delay=2
+respawn_max=0
+
+depend() {
+    need net
+    after firewall iptables
+}
+
+start_pre() {
+    checkpath --file --mode 0644 /var/log/junction-tproxy.log
+}
+
+stop_post() {
+    /usr/local/sbin/junction-tproxy disable
+    return 0
+}

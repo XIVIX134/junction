@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Junction DHCP (dnsmasq), written by Junction's setup.sh.
+# DHCP only: devices are told to use @GATEWAY_IP@ as their gateway and the public
+# DNS servers below; their DNS traffic then goes through the gateway like
+# everything else (direct or VPN, per device).
+interface=@LAN_IF@
+bind-dynamic
+port=0
+@?AUTHORITATIVE@dhcp-authoritative
+dhcp-range=set:pool,@POOL_START@,@POOL_END@,@NETMASK@,@LEASE@
+dhcp-option=option:router,@GATEWAY_IP@
+dhcp-option=option:dns-server,@DNS_LIST@
+dhcp-leasefile=@LEASES@
+# Fixed addresses: one line per device, e.g.
+#   dhcp-host=aa:bb:cc:dd:ee:ff,192.168.1.50,tv
+conf-file=/etc/junction/reservations.conf

@@ -1,0 +1,88 @@
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "udp",
+        "tag": "dns-direct",
+        "server": "@DNS@"
+      }
+    ],
+    "final": "dns-direct",
+    "strategy": "ipv4_only"
+  },
+  "inbounds": [
+    {
+      "type": "tproxy",
+      "tag": "tproxy-in",
+      "listen": "0.0.0.0",
+      "listen_port": 7893
+    },
+    {
+      "type": "mixed",
+      "tag": "mixed-in",
+      "listen": "127.0.0.1",
+      "listen_port": 2080
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "rule_set": ["paused-devices"],
+        "action": "reject"
+      },
+      {
+        "ip_cidr": ["127.0.0.0/8"],
+        "port": [7893, 2080],
+        "action": "reject"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct"
+      },
+      {
+        "rule_set": ["vpn-devices"],
+        "outbound": "vpn-active"
+      }
+    ],
+    "rule_set": [
+      {
+        "type": "local",
+        "tag": "vpn-devices",
+        "format": "source",
+        "path": "/etc/sing-box/vpn-devices.json"
+      },
+      {
+        "type": "local",
+        "tag": "paused-devices",
+        "format": "source",
+        "path": "/etc/sing-box/paused-devices.json"
+      }
+    ],
+    "final": "direct",
+    "auto_detect_interface": true,
+    "default_domain_resolver": "dns-direct"
+  },
+  "experimental": {
+    "clash_api": {
+      "external_controller": "127.0.0.1:9090",
+      "secret": "@SECRET@"
+    },
+    "cache_file": {
+      "enabled": true,
+      "path": "/var/lib/sing-box/cache.db"
+    }
+  }
+}

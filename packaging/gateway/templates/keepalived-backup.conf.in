@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Junction floating gateway @VIP@ - BACKUP box. Copy to the backup machine as
+# /etc/keepalived/keepalived.conf (and junction-backup-notify to
+# /usr/local/sbin/, mode 755), set BACKUP_IF below to its LAN interface, then
+# enable keepalived there. It takes @VIP_ADDR@ only while the Junction box is
+# silent, and meanwhile routes traffic straight to the internet (no VPN).
+global_defs {
+    router_id junction-backup-@VRID@
+    script_user root
+    enable_script_security
+    vrrp_garp_master_refresh 60
+}
+
+vrrp_instance JUNCTION {
+    state BACKUP
+    # BACKUP_IF: the backup machine's LAN interface (e.g. eth0, vmbr0).
+    interface eth0
+    virtual_router_id @VRID@
+    priority @BACKUP_PRIORITY@
+    advert_int 1
+@?PEER@    # unicast_src_ip: the backup machine's own LAN address.
+@?PEER@    unicast_src_ip @PEER@
+@?PEER@    unicast_peer {
+@?PEER@        @SELF_IP@
+@?PEER@    }
+    authentication {
+        auth_type PASS
+        auth_pass @AUTH_PASS@
+    }
+    virtual_ipaddress {
+        @VIP@ dev eth0
+    }
+    notify /usr/local/sbin/junction-backup-notify
+}

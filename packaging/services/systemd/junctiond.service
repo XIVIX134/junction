@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Unit]
+Description=Junction gateway console
+Documentation=https://github.com/XIVIX134/junction
+After=network-online.target sing-box.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=GOMEMLIMIT=64MiB
+ExecStartPre=/bin/mkdir -p /var/lib/junction
+ExecStart=/usr/local/bin/junctiond -config /etc/junction/config.json
+Restart=always
+RestartSec=5
+# Logs go to the journal: journalctl -u junctiond
+
+[Install]
+WantedBy=multi-user.target

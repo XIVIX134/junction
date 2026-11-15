@@ -1,0 +1,24 @@
+#!/sbin/openrc-run
+# SPDX-License-Identifier: GPL-3.0-or-later
+# shellcheck shell=sh disable=SC2034
+
+name="junctiond"
+description="Junction gateway console"
+supervisor="supervise-daemon"
+command="/usr/local/bin/junctiond"
+command_args="-config /etc/junction/config.json"
+output_log="/var/log/junctiond.log"
+error_log="/var/log/junctiond.log"
+respawn_delay=5
+respawn_max=0
+supervise_daemon_args="--env GOMEMLIMIT=64MiB"
+
+depend() {
+    need net
+    after sing-box
+}
+
+start_pre() {
+    checkpath --directory --mode 0750 /var/lib/junction
+    checkpath --file --mode 0640 /var/log/junctiond.log
+}

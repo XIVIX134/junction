@@ -1,0 +1,17 @@
+# build output and dependencies
+/out/
+/web/node_modules/
+/web/dist/
+*.db
+*.db-wal
+*.db-shm
+
+# secrets: WE login material captured from a browser, credentials
+/deploy/isp_login.json
+/deploy/isp_signed.json
+isp.json
+*.secret
+.env
+
+# your gateway, for ./build.sh deploy
+/.deploy.env
