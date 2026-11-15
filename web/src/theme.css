@@ -148,17 +148,23 @@
   --shadow-menu: rgba(20, 30, 50, 0.16);
 }
 
-/* exits: colour by position in the failover config (site.ts exitColorVar) */
+/* exits: colour by position in the failover config (site.ts exitColorVar).
+   A checked set: told apart with colour-blindness too (dataviz validate_palette:
+   adjacent CVD ΔE >= 8.4, normal >= 19.8) and >= 3:1 on the dark panel. In light
+   mode exits 3 and 4 are under 3:1, so charts using them label their lines and
+   have a table view. */
 :root {
-  --exit-1: var(--accent);
-  --exit-2: #a77bf3;
-  --exit-3: #2fbfae;
-  --exit-4: #f2a93b;
+  --exit-1: #3987e5;
+  --exit-2: #d95926;
+  --exit-3: #199e70;
+  --exit-4: #c98500;
   --direct: var(--series-direct);
   --other: var(--text3);
+  --accent-col: color-mix(in oklab, var(--accent) 62%, var(--panel)); /* past columns; the current one is the accent */
 }
 :root[data-theme="light"] {
-  --exit-2: #7b52d6;
-  --exit-3: #12917f;
-  --exit-4: #b86e00;
+  --exit-1: #2a74e8;
+  --exit-2: #eb6834;
+  --exit-3: #1baf7a;
+  --exit-4: #eda100;
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { Columns } from "../charts";
 import { api, ApiError } from "../api/client";
 import type { Device, DeviceDetail, Overview, Profile, Rule, RuleSchedule } from "../api/types";
 import { defaultProfile, effVpn, NAME_SOURCE, route, status } from "../clients";
@@ -243,7 +244,6 @@ function InsightsTab({ d, det, o, err }: { d: Device; det: DeviceDetail | null; 
   const ex: Record<string, number> = {};
   (det.hours ?? []).forEach((h) => Object.entries(h.byExit ?? {}).forEach(([k, v]) => (ex[k] = (ex[k] ?? 0) + v)));
   const days = det.days ?? [];
-  const dmax = Math.max(1, ...days.map((x) => x.down + x.up));
   return (
     <>
       <div className="sec">
@@ -294,14 +294,25 @@ function InsightsTab({ d, det, o, err }: { d: Device; det: DeviceDetail | null; 
           <div className="st">
             Last {days.length} days<span className="r t3">{bytes(days.reduce((s, x) => s + x.down + x.up, 0))}</span>
           </div>
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 70, marginTop: 10 }} role="img" aria-label={`Daily usage for the last ${days.length} days`}>
-            {days.map((x) => (
-              <i
-                key={x.day}
-                title={`${dmy(`${x.day}T12:00:00Z`)} · ${bytes(x.down + x.up)}`}
-                style={{ flex: 1, minHeight: 1, height: `${((x.down + x.up) / dmax) * 100}%`, background: "var(--accent)" }}
-              />
-            ))}
+          <div style={{ marginTop: 8 }}>
+            <Columns
+              h={120}
+              padL={46}
+              label={`Daily usage for the last ${days.length} days`}
+              yFmt={(x) => (x === 0 ? "0" : bytes(x, 1))}
+              xLabel={(i) => (i === days.length - 1 ? "today" : i % 7 === 0 && i < days.length - 3 ? dmy(`${days[i].day}T12:00:00Z`) : null)}
+              cols={days.map((x, i) => ({
+                key: x.day,
+                value: x.down + x.up,
+                accent: i === days.length - 1,
+                tip: i === days.length - 1 ? "Today · so far" : dmy(`${x.day}T12:00:00Z`),
+                rows: [
+                  { label: "in total", value: bytes(x.down + x.up) },
+                  { label: "download", value: bytes(x.down), color: "var(--series-down)" },
+                  { label: "upload", value: bytes(x.up), color: "var(--series-up)" },
+                ],
+              }))}
+            />
           </div>
         </div>
       )}

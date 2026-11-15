@@ -1,3 +1,4 @@
+import { CountUp } from "../charts";
 import { useEffect, useRef, type ReactNode } from "react";
 import type { Overview } from "../api/types";
 import { gatewayIP, gatewayShort, selectedEndpoint } from "../clients";
@@ -114,7 +115,7 @@ function TopBar({ o }: { o: Overview | null }) {
         ) : (
           <>
             <span style={{ display: "flex", gap: 7, alignItems: "center" }}>
-              <span className={`dot ${gw && gw.role !== "master" ? "warn" : "ok"}`} />
+              <span className={`dot pulse ${gw && gw.role !== "master" ? "warn" : "ok"}`} />
               Gateway {gatewayShort()} {role}
               <span className="hide-m" style={{ display: "contents" }}>
                 <span className="t3">·</span>via {ep ? ep.name : "Direct"}
@@ -122,7 +123,7 @@ function TopBar({ o }: { o: Overview | null }) {
             </span>
             <span className="sep hide-m" />
             <span className="hide-m num">
-              ↓ {rate(o.live.down)} &nbsp;↑ {rate(o.live.up)}
+              ↓ <CountUp value={o.live.down} fmt={rate} ms={1200} /> &nbsp;↑ <CountUp value={o.live.up} fmt={rate} ms={1200} />
             </span>
             <span className="sep hide-m" />
             <span className="t3 hide-m">

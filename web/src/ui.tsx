@@ -1,6 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Device, GatewayEvent } from "./api/types";
-import { hm, hms } from "./fmt";
+import { LineChart } from "./charts";
+import { bytes, hm, hms } from "./fmt";
 
 // Small shared pieces of the console: icons, switch, charts, state strip, pop-up menu.
 
@@ -102,118 +103,11 @@ export function Sw({ on, label, onChange, disabled, reason, busy }: SwProps) {
 
 export const Radio = ({ on }: { on: boolean }) => <span className={on ? "radio on" : "radio"} aria-hidden="true" />;
 
-// ---------- charts (SVG, like the concept) ----------
+// ---------- charts (see charts.tsx) ----------
 
-function niceMax(v: number) {
-  if (v <= 0) return 1;
-  const p = Math.pow(10, Math.floor(Math.log10(v)));
-  for (const m of [1, 2, 4, 5, 8, 10]) if (m * p >= v) return m * p;
-  return 10 * p;
-}
+export { Spark, useWidth } from "./charts";
 
-/** Width of the element, kept up to date. */
-export function useWidth<T extends HTMLElement>(fallback = 600) {
-  const ref = useRef<T>(null);
-  const [w, setW] = useState(fallback);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setW(el.clientWidth || fallback));
-    ro.observe(el);
-    setW(el.clientWidth || fallback);
-    return () => ro.disconnect();
-  }, [fallback]);
-  return [ref, w] as const;
-}
-
-type Series = { values: (number | null)[]; color: string; fill?: boolean };
-
-/** Line/area chart with gridlines, x ticks and an optional "Now" marker (0..1 across). */
-export function AreaChart({
-  h,
-  series,
-  labels,
-  yFmt,
-  nowX,
-  nowLabel,
-  padL = 62,
-  label,
-}: {
-  h: number;
-  series: Series[];
-  labels: string[];
-  yFmt: (v: number) => string;
-  nowX?: number | null;
-  nowLabel?: string;
-  padL?: number;
-  label: string;
-}) {
-  const [ref, w] = useWidth<HTMLDivElement>();
-  const n = Math.max(2, labels.length);
-  const pad = { l: padL, r: 20, t: 10, b: 22 };
-  const iw = Math.max(10, w - pad.l - pad.r);
-  const ih = h - pad.t - pad.b;
-  const all = series.flatMap((s) => s.values.filter((v): v is number => v != null));
-  const max = niceMax(all.length ? Math.max(...all) : 0);
-  const x = (i: number) => pad.l + (iw * i) / (n - 1);
-  const y = (v: number) => pad.t + ih - (ih * v) / max;
-  const ticks = labels.length
-    ? (w < 520 ? [0, 6, 12, 18, n - 1] : [0, 3, 6, 9, 12, 15, 18, 21, n - 1]).filter((i, k, a) => i < n && a.indexOf(i) === k)
-    : [];
-  return (
-    <div ref={ref} className="chart">
-      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label={label}>
-        {[0, 1, 2, 3, 4].map((k) => {
-          const v = (max * k) / 4;
-          const yy = y(v);
-          return (
-            <g key={k}>
-              <line x1={pad.l} x2={w - pad.r} y1={yy} y2={yy} stroke={k ? "var(--chart-grid)" : "var(--chart-axis)"} />
-              <text x={pad.l - 8} y={yy + 4} textAnchor="end" fill="var(--text3)" fontSize="11">
-                {yFmt(v)}
-              </text>
-            </g>
-          );
-        })}
-        {ticks.map((i) => (
-          <g key={i}>
-            <text x={x(i)} y={h - 6} textAnchor="middle" fill="var(--text3)" fontSize="11">
-              {labels[i]}
-            </text>
-            <line x1={x(i)} x2={x(i)} y1={pad.t + ih} y2={pad.t + ih + 4} stroke="var(--chart-axis)" />
-          </g>
-        ))}
-        {series.map((s, si) => {
-          const pts = s.values.map((v, i) => (v == null ? null : ([x(i), y(v)] as const))).filter(Boolean) as (readonly [number, number])[];
-          if (!pts.length) return null;
-          const d = pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join("");
-          return (
-            <g key={si}>
-              {s.fill && (
-                <path d={`${d}L${pts[pts.length - 1][0]} ${y(0)}L${pts[0][0]} ${y(0)}Z`} fill={s.color} opacity=".13" />
-              )}
-              <path d={d} fill="none" stroke={s.color} strokeWidth="1.5" />
-              {pts.length < 40 && pts.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r="2" fill={s.color} />)}
-            </g>
-          );
-        })}
-        {nowX != null && nowX >= 0 && nowX <= 1 && (
-          <g>
-            <line x1={pad.l + iw * nowX} x2={pad.l + iw * nowX} y1={pad.t} y2={pad.t + ih} stroke="var(--text3)" strokeDasharray="2 3" />
-            <text x={pad.l + iw * nowX + 5} y={pad.t + 10} fill="var(--text2)" fontSize="11">
-              {nowLabel}
-            </text>
-          </g>
-        )}
-        {!all.length && (
-          <text x={pad.l + iw / 2} y={pad.t + ih / 2} textAnchor="middle" fill="var(--text3)" fontSize="12">
-            No data yet
-          </text>
-        )}
-      </svg>
-    </div>
-  );
-}
+const mbit = (v: number) => `${v === 0 ? "0" : v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1).replace(/.0$/, "") : v.toFixed(2).replace(/0$/, "")} Mbit/s`;
 
 /** Hourly traffic as an average rate (Mbit/s), with the current hour averaged over the minutes so far. */
 export function HourChart({ hours, now, h = 196, label }: { hours: { hour: string; down: number; up: number }[]; now: number; h?: number; label: string }) {
@@ -223,40 +117,24 @@ export function HourChart({ hours, now, h = 196, label }: { hours: { hour: strin
   const vals = (k: "down" | "up") => hours.map((x, i) => (i <= cur ? (x[k] * 8) / secs(i) / 1e6 : null));
   const span = Math.max(1, hours.length - 1);
   return (
-    <AreaChart
+    <LineChart
       h={h}
       label={label}
       labels={hours.map((x) => hm(x.hour))}
+      tipTitle={(i) => (
+        <>
+          {hm(hours[i].hour)}–{hm(Date.parse(hours[i].hour) + 3600e3)}
+          {i === cur && <span className="t3"> · so far</span>}
+          <span className="t3"> · {bytes(hours[i].down + hours[i].up)}</span>
+        </>
+      )}
       series={[
-        { values: vals("down"), color: "var(--series-down)", fill: true },
-        { values: vals("up"), color: "var(--series-up)" },
+        { name: "Download", values: vals("down"), color: "var(--series-down)", fill: true },
+        { name: "Upload", values: vals("up"), color: "var(--series-up)" },
       ]}
-      yFmt={(v) => `${v === 0 ? "0" : v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1).replace(/\.0$/, "") : v.toFixed(2).replace(/0$/, "")} Mbit/s`}
-      nowX={hours.length ? (now - start) / (span * 3600e3) : null}
-      nowLabel={`Now ${hm(now)}`}
+      yFmt={mbit}
+      markers={hours.length ? [{ at: (now - start) / 3600e3 > span ? span : (now - start) / 3600e3, label: `Now ${hm(now)}` }] : []}
     />
-  );
-}
-
-/** Ping sparkline; a dashed red baseline when there is no data at all. */
-export function Spark({ vals, w = 150, h = 26, color = "var(--accent)", max, label }: { vals: (number | null)[]; w?: number; h?: number; color?: string; max?: number; label: string }) {
-  const v = vals.filter((x): x is number => x != null);
-  if (!v.length)
-    return (
-      <svg width={w} height={h} role="img" aria-label={`${label}: no data`}>
-        <line x1="0" x2={w} y1={h - 2} y2={h - 2} stroke={vals.length ? "var(--bad)" : "var(--text3)"} strokeDasharray="2 3" opacity=".7" />
-      </svg>
-    );
-  const mx = max || Math.max(...v) * 1.15 || 1;
-  const pts = vals
-    .map((x, i) => (x == null ? null : ([(w * i) / Math.max(1, vals.length - 1), h - 2 - ((h - 4) * x) / mx] as const)))
-    .filter(Boolean) as (readonly [number, number])[];
-  const d = pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join("");
-  return (
-    <svg width={w} height={h} role="img" aria-label={`${label}: ${Math.min(...v)}–${Math.max(...v)} ms`}>
-      <path d={`${d}L${pts[pts.length - 1][0]} ${h}L${pts[0][0]} ${h}Z`} fill={color} opacity=".12" />
-      <path d={d} fill="none" stroke={color} strokeWidth="1.2" />
-    </svg>
   );
 }
 

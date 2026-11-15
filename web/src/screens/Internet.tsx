@@ -10,6 +10,7 @@ import { plainError } from "../model";
 import { changeSelector, DOWN_REASON, profileBody, useSelectorState } from "../selector";
 import { Icon, Radio, Spark, stateDot, StateStrip, Sw } from "../ui";
 import { BundlePanel } from "../components/BundlePanel";
+import { LatencyPanel } from "../components/LatencyPanel";
 import { useProfiles } from "../prefs";
 import { backupLabel } from "../site";
 
@@ -25,6 +26,7 @@ function InternetView({ o }: { o: Overview }) {
         <span className="meta">Exits, bundle, gateway failover</span>
       </div>
       <Exits o={o} />
+      <LatencyPanel o={o} />
       <div className="grid collapse-md">
         <BundlePanel o={o} />
         <Failover o={o} />

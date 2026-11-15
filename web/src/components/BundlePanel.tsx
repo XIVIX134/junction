@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { Columns, LineChart } from "../charts";
 import { api, ApiError } from "../api/client";
 import type { Bundle, BundleState, Overview, UsageDay } from "../api/types";
 import { bumpEvents } from "../events";
@@ -170,8 +171,15 @@ const Fact = ({ k, v, cls }: { k: string; v: string; cls?: string }) => (
 
 type Slot = { day: string; gw: number | null; content: number; tunnel: number; direct: number; future: boolean };
 
+/** The next calendar day of a "YYYY-MM-DD" key (time-zone free). */
+const nextKey = (k: string) => {
+  const d = new Date(`${k}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+};
+
 function Days({ v, usage, now }: { v: BundleView | null; usage: UsageDay[]; now: number }) {
-  const [table, setTable] = useState(() => matchMedia("(max-width: 600px)").matches); // chart text is unreadable on a phone
+  const [view, setView] = useState<"day" | "total" | "table">(() => (matchMedia("(max-width: 600px)").matches ? "table" : "day")); // chart text is unreadable on a phone
   const today = dayKey(now);
   const byDay = new Map(usage.map((u) => [u.day, u]));
   // The bundle's days when we know them; otherwise the last 30.
@@ -182,49 +190,68 @@ function Days({ v, usage, now }: { v: BundleView | null; usage: UsageDay[]; now:
   const end = cycle && cycleEnd ? Date.parse(cycleEnd) : now;
   const lastKey = dayKey(cycle && cycleEnd ? Math.min(end, start + 31 * DAY) - 1 : now); // a cycle ending at midnight doesn't own that day
   const slots: Slot[] = [];
-  // Step from noon so a daylight-saving hour never skips or repeats a day.
-  for (let t = Date.parse(`${dayKey(start)}T12:00:00+02:00`); slots.length < 32; t += DAY) {
-    const k = dayKey(t);
-    if (k > lastKey) break;
-    if (slots.length && slots[slots.length - 1].day === k) continue;
+  for (let k = dayKey(start); k <= lastKey && slots.length < 32; k = nextKey(k)) {
     const u = byDay.get(k);
     const future = k > today;
     slots.push({ day: k, gw: future ? null : u ? u.billed || u.tunnel + u.direct : 0, content: u ? u.tunnel + u.direct : 0, tunnel: u?.tunnel ?? 0, direct: u?.direct ?? 0, future });
   }
   const label = (k: string) => `${+k.slice(8)} ${MON[+k.slice(5, 7) - 1]}`;
+  const name = (k: string) => (k === today ? "Today" : label(k));
+  const gbFmt = (x: number) => `${+(x / 1e9).toFixed(x >= 10e9 || x === 0 ? 0 : 1)} GB`;
+  const every = slots.length > 20 ? 3 : slots.length > 10 ? 2 : 1;
+  const tIdx = slots.findIndex((s) => s.day === today);
 
-  const peak = Math.max(1e9, ...slots.map((s) => s.gw ?? 0)) / 1e9;
-  const p10 = Math.pow(10, Math.floor(Math.log10(peak)));
-  const max = ([1, 2, 2.5, 5, 10].find((m) => m * p10 >= peak) ?? 10) * p10 * 1e9;
-  const W = 1100;
-  const H = 190;
-  const T = 18;
-  const B = 24;
-  const ph = H - T - B;
-  const L = 50;
-  const sw = (W - L) / Math.max(7, slots.length);
-  const bw = Math.min(18, sw - 8);
+  // Running total: the days added up, lined up with what the bundle says is used now.
+  let run = 0;
+  const cum = slots.map((s) => (s.future ? null : (run += s.gw ?? 0)));
+  const off = v && tIdx >= 0 ? v.used - (cum[tIdx] ?? 0) : 0;
+  const used = cum.map((c) => (c == null ? null : Math.max(0, c + off)));
+  const size = v?.size ?? 0;
+  const n = slots.length;
+  const even = slots.map((_, i) => (cycle && size ? (size * (i + 1)) / n : null));
+  const pace = v?.pace ?? null;
+  // At this pace: from today until it reaches the bundle's size (there it runs out).
+  let full = false;
+  const proj = slots.map((_, i) => {
+    if (full || tIdx < 0 || i < tIdx || !pace || used[tIdx] == null) return null;
+    const x = used[tIdx]! + pace * (i - tIdx);
+    if (size && x >= size) {
+      full = true;
+      return size;
+    }
+    return x;
+  });
+  const runsOutAt = v?.runsOut != null && slots.length ? (v.runsOut - Date.parse(`${slots[0].day}T00:00:00Z`)) / DAY - 0.5 : null;
 
   return (
     <div style={{ marginTop: 20 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <b style={{ fontSize: 12.5 }}>{cycle ? "Every day of this bundle" : "Last 30 days"}</b>
+        <b style={{ fontSize: 12.5 }}>{cycle ? "This bundle, day by day" : "Last 30 days"}</b>
         <span className="t3 hide-m" style={{ fontSize: 12 }}>
-          What the gateway counted on the wire, whole packets.
+          {view === "total" ? "Used so far against an even pace to the end of the bundle." : "What the gateway counted on the wire, whole packets."}
         </span>
-        <div className="legend" style={{ marginLeft: "auto", fontSize: 11.5 }}>
-          <button type="button" className="btn sm ghost" aria-pressed={table} onClick={() => setTable(!table)}>
-            {table ? "Chart" : "Table"}
-          </button>
+        <div className="seg sm" role="group" aria-label="Show" style={{ marginLeft: "auto" }}>
+          {(
+            [
+              ["day", "Per day"],
+              ["total", "Running total"],
+              ["table", "Table"],
+            ] as const
+          ).map(([k, l]) => (
+            <button key={k} type="button" aria-pressed={view === k} className={view === k ? "on" : ""} onClick={() => setView(k)} disabled={k === "total" && !cycle}>
+              {l}
+            </button>
+          ))}
         </div>
       </div>
-      {table ? (
+      {view === "table" ? (
         <div className="scroll-x">
           <table className="tb compact" style={{ marginTop: 6, maxWidth: 820 }}>
             <thead>
               <tr>
                 <th>Day</th>
                 <th className="rt">Used</th>
+                <th className="rt">Running total</th>
                 <th className="rt hide-m">Content</th>
                 <th className="rt">VPN</th>
                 <th className="rt">Direct</th>
@@ -232,12 +259,14 @@ function Days({ v, usage, now }: { v: BundleView | null; usage: UsageDay[]; now:
             </thead>
             <tbody>
               {slots
-                .filter((s) => !s.future)
+                .map((s, i) => ({ s, i }))
+                .filter(({ s }) => !s.future)
                 .reverse()
-                .map((s) => (
+                .map(({ s, i }) => (
                   <tr key={s.day}>
-                    <td>{s.day === today ? "Today" : label(s.day)}</td>
+                    <td>{name(s.day)}</td>
                     <td className="rt">{bytes(s.gw ?? 0)}</td>
+                    <td className="rt t2">{bytes(used[i] ?? 0)}</td>
                     <td className="rt t2 hide-m">{bytes(s.content)}</td>
                     <td className="rt t2">{bytes(s.tunnel)}</td>
                     <td className="rt t2">{bytes(s.direct)}</td>
@@ -249,45 +278,69 @@ function Days({ v, usage, now }: { v: BundleView | null; usage: UsageDay[]; now:
             Used is whole packets on the wire. Content, VPN and Direct are what devices sent and received, without the packet overhead.
           </div>
         </div>
+      ) : view === "total" ? (
+        <div style={{ marginTop: 8 }}>
+          <LineChart
+            h={220}
+            label="Bundle used so far, against an even pace and the bundle size"
+            labels={slots.map((s) => label(s.day))}
+            ticks={slots.map((_, i) => i).filter((i) => i % (every * 2) === 0 || i === n - 1)}
+            tipTitle={(i) => name(slots[i].day) + (slots[i].future ? " · ahead" : "")}
+            yMax={Math.ceil((Math.max(size, ...proj.map((x) => x ?? 0), ...used.map((x) => x ?? 0)) * 1.05) / 4 / 5e9) * 4 * 5e9 /* quarter steps of whole 5 GB */}
+            yFmt={gbFmt}
+            tipFmt={(x) => bytes(x)}
+            series={[
+              { name: "Used", values: used, color: "var(--accent)", fill: true },
+              { name: "At this pace", values: proj, color: "var(--accent)", dash: true },
+              { name: "Even pace", values: even, color: "var(--series-direct)", thin: true },
+              { name: `Bundle ${gbFmt(size)}`, values: slots.map(() => size || null), color: "var(--warn)", thin: true },
+            ]}
+            markers={[
+              ...(tIdx >= 0 ? [{ at: tIdx, label: "Today" }] : []),
+              ...(runsOutAt != null && runsOutAt >= 0 && runsOutAt <= n - 1 ? [{ at: runsOutAt, label: `Runs out ~${dmy(v!.runsOut!)}`, tone: "warn" as const }] : []),
+            ]}
+          />
+          <div className="legend" style={{ display: "flex", gap: 14, fontSize: 11.5, marginTop: 4, flexWrap: "wrap" }}>
+            <span>
+              <i className="lk" style={{ borderColor: "var(--accent)" }} />
+              Used
+            </span>
+            <span>
+              <i className="lk dash" style={{ borderColor: "var(--accent)" }} />
+              At this pace
+            </span>
+            <span>
+              <i className="lk thin" style={{ borderColor: "var(--series-direct)" }} />
+              Even pace
+            </span>
+            <span>
+              <i className="lk thin" style={{ borderColor: "var(--warn)" }} />
+              Bundle size
+            </span>
+          </div>
+        </div>
       ) : (
-        <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ marginTop: 6, display: "block" }} role="img" aria-label="Data per day: what the gateway counted on the wire">
-          {[0, 1, 2, 3, 4].map((k) => {
-            const y = T + ph * (1 - k / 4);
-            return (
-              <g key={k}>
-                <line x1={L} x2={W} y1={y} y2={y} stroke={k ? "var(--chart-grid)" : "var(--chart-axis)"} />
-                <text x={L - 8} y={y + 4} textAnchor="end" fill="var(--text3)" fontSize="11">
-                  {+((max * k) / 4 / 1e9).toFixed(1)} GB
-                </text>
-              </g>
-            );
-          })}
-          {slots.map((s, i) => {
-            const x = L + i * sw + (sw - bw) / 2;
-            const isToday = s.day === today;
-            if (s.future) return <rect key={s.day} x={x} y={T + ph - 2} width={bw} height={2} rx={1} fill="var(--track)" />;
-            const h = ((s.gw ?? 0) / max) * ph;
-            const r = Math.min(3, h / 2, bw / 2);
-            return (
-              <g key={s.day}>
-                <title>{`${isToday ? "Today" : label(s.day)} · ${bytes(s.gw ?? 0)} on the wire (VPN ${bytes(s.tunnel)}, direct ${bytes(s.direct)})`}</title>
-                <rect x={L + i * sw} y={T} width={sw} height={ph} fill="transparent" />
-                {h > 0.5 && (
-                  <path
-                    d={`M${x},${T + ph}v-${h - r}a${r},${r} 0 0 1 ${r},-${r}h${bw - 2 * r}a${r},${r} 0 0 1 ${r},${r}v${h - r}z`}
-                    fill="var(--accent)"
-                    opacity={isToday ? 0.55 : 1}
-                  />
-                )}
-                {(i % 2 === 0 || isToday) && (
-                  <text x={x + bw / 2} y={H - 6} textAnchor="middle" fill="var(--text3)" fontSize="11">
-                    {isToday ? "today" : label(s.day)}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-        </svg>
+        <div style={{ marginTop: 8 }}>
+          <Columns
+            h={190}
+            label="Data per day: what the gateway counted on the wire"
+            yFmt={gbFmt}
+            xLabel={(i) => (slots[i].day === today ? "today" : i % every === 0 && Math.abs(i - tIdx) > 1 ? label(slots[i].day) : null)}
+            cols={slots.map((s) => ({
+              key: s.day,
+              value: s.gw,
+              accent: s.day === today,
+              tip: s.future ? label(s.day) : `${name(s.day)}${s.day === today ? " · so far" : ""}`,
+              rows: s.future
+                ? [{ label: "", value: "not yet", muted: true }]
+                : [
+                    { label: "on the wire", value: bytes(s.gw ?? 0) },
+                    { label: "through VPN", value: bytes(s.tunnel) },
+                    { label: "direct", value: bytes(s.direct) },
+                  ],
+            }))}
+          />
+        </div>
       )}
     </div>
   );

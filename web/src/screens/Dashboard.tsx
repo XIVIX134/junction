@@ -1,3 +1,4 @@
+import { BusyHours, StatsRow } from "./DashboardViz";
 import { useEffect, useState } from "react";
 import { TZ } from "../format";
 import { backupLabel } from "../site";
@@ -83,7 +84,7 @@ function alertsOf(o: Overview): Alert[] {
 
 function DashboardView({ o }: { o: Overview }) {
   const now = Date.parse(o.now);
-  const traffic = useFetch("traffic24", () => api.traffic(24), 60000);
+  const traffic = useFetch("traffic168", () => api.traffic(168), 60000); // a week: the heatmap, and today against yesterday
   const v = useEventsVersion();
   const ev = useFetch("dash-events", () => api.events({ limit: 8 }), 20000);
   const { reload } = ev;
@@ -98,7 +99,8 @@ function DashboardView({ o }: { o: Overview }) {
   const ncN = online.filter((d) => !d.controllable).length;
   const top = devs.filter((d) => d.usesGateway).sort((a, b) => totalToday(b) - totalToday(a));
   const topMax = Math.max(1, top.length ? totalToday(top[0]) : 1);
-  const hours = traffic.data?.hours ?? [];
+  const week = traffic.data?.hours ?? [];
+  const hours = week.slice(-24);
   const tDown = hours.reduce((s, h) => s + h.down, 0);
   const tUp = hours.reduce((s, h) => s + h.up, 0);
   const alerts = alertsOf(o);
@@ -136,6 +138,8 @@ function DashboardView({ o }: { o: Overview }) {
           </div>
         )}
       </div>
+
+      <StatsRow o={o} hours={week} devices={devs} />
 
       <div className="grid">
         <section className="pn c4" aria-labelledby="w-inet">
@@ -238,6 +242,8 @@ function DashboardView({ o }: { o: Overview }) {
 
         <BundleWidget o={o} />
 
+        <BusyHours hours={week} now={now} />
+
         {g && (
           <section className="pn c4" aria-labelledby="w-gw">
             <div className="hd">
@@ -263,7 +269,7 @@ function DashboardView({ o }: { o: Overview }) {
           </section>
         )}
 
-        <section className={`pn ${g ? "c8" : "c12"}`} aria-labelledby="w-ev">
+        <section className={`pn ${g ? "c12" : "c4"}`} aria-labelledby="w-ev">
           <div className="hd">
             <h2 id="w-ev">Recent events</h2>
             <div className="r">
@@ -329,6 +335,8 @@ function TopWidget({ top, topMax, bypass }: { top: Device[]; topMax: number; byp
     .sort((a, b) => b.bytes - a.bytes);
   const gMax = Math.max(1, groups[0]?.bytes ?? 1);
   const gSum = groups.reduce((s, g) => s + g.bytes, 0);
+  const tSum = top.reduce((s, d) => s + totalToday(d), 0);
+  const share = (b: number, of: number) => `${Math.round((b / Math.max(1, of)) * 100)}% of all`;
   return (
     <section className="pn c5" aria-labelledby="w-top">
       <div className="hd">
@@ -355,8 +363,9 @@ function TopWidget({ top, topMax, bypass }: { top: Device[]; topMax: number; byp
                 <span className="bar" style={{ flex: 1, height: 4 }}>
                   <i style={{ width: `${(totalToday(d) / topMax) * 100}%`, background: "var(--accent)" }} />
                 </span>
-                <span className="v" style={{ width: 64, textAlign: "right" }}>
-                  {bytes(totalToday(d))}
+                <span className="v" style={{ width: 74, textAlign: "right" }}>
+                  <span className="lv-a">{bytes(totalToday(d))}</span>
+                  <span className="lv-b">{share(totalToday(d), tSum)}</span>
                 </span>
               </button>
             ))}
@@ -377,7 +386,6 @@ function TopWidget({ top, topMax, bypass }: { top: Device[]; topMax: number; byp
                 className="lr"
                 key={g.name || "-"}
                 onClick={() => navigate(`/clients?group=${encodeURIComponent(g.name || "Ungrouped")}`)}
-                title={`${g.n} device${g.n === 1 ? "" : "s"} · ${((g.bytes / Math.max(1, gSum)) * 100).toFixed(0)}% of the total`}
               >
                 <span style={{ width: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} className={g.name ? "" : "t2"}>
                   {g.name || "No group"}
@@ -386,8 +394,9 @@ function TopWidget({ top, topMax, bypass }: { top: Device[]; topMax: number; byp
                 <span className="bar" style={{ flex: 1, height: 4 }}>
                   <i style={{ width: `${(g.bytes / gMax) * 100}%`, background: "var(--accent)" }} />
                 </span>
-                <span className="v" style={{ width: 64, textAlign: "right" }}>
-                  {bytes(g.bytes)}
+                <span className="v" style={{ width: 74, textAlign: "right" }}>
+                  <span className="lv-a">{bytes(g.bytes)}</span>
+                  <span className="lv-b">{share(g.bytes, gSum)}</span>
                 </span>
               </button>
             ))}

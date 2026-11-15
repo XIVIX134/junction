@@ -386,8 +386,8 @@ function exits(now: Date, ds: Device[]): ExitHealth[] {
       healthy: false,
       probed: true,
       latencyMs: null,
-      lastSuccess: "2026-11-12T23:21:48Z",
-      lastFailure: "2026-11-12T23:22:00Z",
+      lastSuccess: iso(new Date(startedAt - 40 * 60000 - 12000)), // the latency history shows it stop then
+      lastFailure: iso(new Date(now.getTime() - 30000)),
       lastError: "timeout: no recent network activity",
       bytesToday: 0,
       profiles: ["default", "streaming", "gaming"].map((profile) => ({ profile, known: true, healthy: false, latencyMs: null, nextCheck: travelNext })),
@@ -710,7 +710,7 @@ export function traffic(q: URLSearchParams) {
 export function exitHistory(q: URLSearchParams) {
   const n = Math.max(1, Math.min(1440, Number(q.get("minutes") ?? 60) || 60));
   // history is in memory on the gateway: here it starts 40 minutes before the mock did
-  const first = Math.floor((startedAt - 40 * 60000) / 60000) * 60000;
+  const first = Math.floor((startedAt - 6 * 60 * 60000) / 60000) * 60000;
   const end = Math.floor(Date.now() / 60000) * 60000;
   const samples = [];
   for (let t = Math.max(first, end - (n - 1) * 60000); t <= end; t += 60000) {
@@ -719,7 +719,8 @@ export function exitHistory(q: URLSearchParams) {
       home: Math.round(312 + 9 * Math.sin(k / 3) + (k % 17 === 0 ? 60 : 0)),
       direct: Math.round(14 + 2 * Math.sin(k / 5)),
     };
-    if (t - first > 5 * 60000) exits.travel = null; // Travel VPN: no reply (missing in the first samples)
+    // Travel VPN answered until 40 minutes before the mock started, then stopped
+    exits.travel = t < startedAt - 40 * 60000 ? Math.round(168 + 14 * Math.sin(k / 4) + (k % 23 === 0 ? 45 : 0)) : null;
     samples.push({ at: iso(new Date(t)), exits });
   }
   return { samples };

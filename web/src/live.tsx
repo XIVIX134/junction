@@ -19,6 +19,17 @@ type LiveValue = {
 
 const LiveContext = createContext<LiveValue | null>(null);
 
+// The last 5 minutes of live rates (one sample per overview, every ~2 s), kept while the app is open.
+export type LiveSample = { t: number; down: number; up: number };
+const history: LiveSample[] = [];
+export const liveHistory = (): readonly LiveSample[] => history;
+function remember(o: Overview) {
+  const t = Date.parse(o.now);
+  if (history.length && history[history.length - 1].t >= t) return;
+  history.push({ t, down: o.live.down, up: o.live.up });
+  while (history.length && history[0].t < t - 5 * 60e3) history.shift();
+}
+
 const POLL_MS = 3000;
 const STREAM_SILENCE_MS = 8000; // the server sends every 2 s
 const RETRY_STREAM_AFTER_POLLS = 10;
@@ -33,6 +44,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
 
   accept.current = (o, via) => {
     syncSite(o);
+    remember(o);
     setOverview(o);
     setStatus(via);
     setError(null);

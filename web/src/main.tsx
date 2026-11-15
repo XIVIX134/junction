@@ -4,6 +4,7 @@ import { App } from "./App";
 import { applyTheme } from "./prefs";
 import "./theme.css";
 import "./app.css";
+import "./motion.css";
 
 applyTheme();
 createRoot(document.getElementById("root")!).render(
