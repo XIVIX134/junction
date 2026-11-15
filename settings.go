@@ -512,13 +512,13 @@ func (s *State) autoRenew() *AutoRenew {
 	return &a
 }
 
-// updateChecks: the app looks for new versions (needs update_url, and isn't switched off).
+// updateChecks: the app looks for new versions (Settings, Updates).
 func (s *State) updateChecks() bool {
-	return s.cfg.UpdateURL != "" && s.setting("update_check", "1") == "1"
+	return s.setting("update_check", s.cfg.updateCheckDefault()) == "1"
 }
 
 func (s *State) updateSettings(b Config) UpdateSettings {
-	u := UpdateSettings{Check: b.UpdateURL != "" && s.setting("update_check", "1") == "1", URL: b.UpdateURL}
+	u := UpdateSettings{Check: s.setting("update_check", b.updateCheckDefault()) == "1", URL: b.updateURL()}
 	s.update.mu.Lock()
 	defer s.update.mu.Unlock()
 	if !s.update.checkedAt.IsZero() {

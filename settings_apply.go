@@ -336,6 +336,9 @@ func (s *State) planPatch(p *SettingsPatch) (*patchPlan, error) {
 					return nil, bad("The releases address must be an https:// address, like https://api.github.com/repos/OWNER/junction/releases.")
 				}
 			}
+			if v == defaultUpdateURL {
+				v = "" // the default: keep the key out
+			}
 			pl.config("update_url", func(m map[string]any) error { setOrDelete(m, "update_url", v); return nil })
 		}
 	}
@@ -674,6 +677,9 @@ func (s *State) commit(pl *patchPlan) (restart []string, err error) {
 	}
 	if _, ok := pl.saves["bundle_autorenew"]; ok {
 		go s.autoRenewNow()
+	}
+	if pl.saves["update_check"] == "1" {
+		s.startUpdateCheck(true)
 	}
 	for k, running := range map[string]string{"timezone": s.cfg.TimeZone, "gateway_ip": s.cfg.GatewayIP, "lan": s.cfg.LAN} {
 		if v, ok := pl.saves[k]; ok && v != running {

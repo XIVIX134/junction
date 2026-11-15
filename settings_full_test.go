@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -561,5 +562,50 @@ func TestBackupDownload(t *testing.T) {
 	st.db.QueryRow(`SELECT COUNT(*) FROM sessions`).Scan(&n)
 	if n != 0 {
 		t.Fatalf("%d sessions in the backup", n)
+	}
+}
+
+type rtFunc func(*http.Request) (*http.Response, error)
+
+func (f rtFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestUpdateChecksDefaultToOfficialReleases(t *testing.T) {
+	s := testState(t)
+	oldV := version
+	version = "v1.0.0"
+	t.Cleanup(func() { version = oldV })
+	asked := make(chan string, 1)
+	old := updateHTTP
+	updateHTTP = &http.Client{Transport: rtFunc(func(r *http.Request) (*http.Response, error) {
+		asked <- r.URL.String()
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"tag_name":"v9.9.9"}`)), Header: http.Header{}}, nil
+	})}
+	t.Cleanup(func() { updateHTTP = old })
+	h := testHandler(s)
+	var st Settings
+	json.Unmarshal(do(h, call{method: "GET", path: "/api/settings"}).Body.Bytes(), &st)
+	if st.Updates.Check || st.Updates.URL != defaultUpdateURL {
+		t.Fatalf("default: %+v", st.Updates)
+	}
+	if rec := do(h, call{method: "POST", path: "/api/update", body: `{"version":"v9.9.9"}`}); rec.Code != 501 {
+		t.Fatalf("install with checks off: %d", rec.Code)
+	}
+	rec := do(h, call{method: "PUT", path: "/api/settings", body: `{"updates":{"check":true}}`})
+	json.Unmarshal(rec.Body.Bytes(), &st)
+	if rec.Code != 200 || !st.Updates.Check {
+		t.Fatalf("switching on: %d %s", rec.Code, rec.Body)
+	}
+	select {
+	case u := <-asked:
+		if u != defaultUpdateURL {
+			t.Fatalf("asked %s", u)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("didn't look for a new version when switched on")
+	}
+	time.Sleep(100 * time.Millisecond)
+	json.Unmarshal(do(h, call{method: "GET", path: "/api/settings"}).Body.Bytes(), &st)
+	if st.Updates.Available == nil || *st.Updates.Available != "v9.9.9" || st.Updates.LastCheck == nil {
+		t.Fatalf("after the check: %+v", st.Updates)
 	}
 }

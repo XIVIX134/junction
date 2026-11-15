@@ -46,7 +46,7 @@ type Config struct {
 	BrandName      string `json:"brand_name"`      // "Junction"
 	BackupName     string `json:"backup_name"`     // "Backup": what the backup gateway box is called in the app
 	BackupIP       string `json:"backup_ip"`       // "" = keepalived's unicast_peer
-	UpdateURL      string `json:"update_url"`      // GitHub releases API URL; "" = no updates from the app
+	UpdateURL      string `json:"update_url"`      // GitHub releases API URL; "" = the official releases (defaultUpdateURL)
 
 	foAPISet bool // the file named failover_api itself (even as "")
 }
@@ -198,4 +198,23 @@ func clashSecret(path string) (string, error) {
 		return "", err
 	}
 	return sb.Experimental.ClashAPI.Secret, nil
+}
+
+// defaultUpdateURL: where new versions are looked for when update_url isn't set.
+const defaultUpdateURL = "https://api.github.com/repos/XIVIX134/junction/releases/latest"
+
+// updateURL is update_url, else the official releases.
+func (c Config) updateURL() string {
+	if c.UpdateURL != "" {
+		return c.UpdateURL
+	}
+	return defaultUpdateURL
+}
+
+// updateCheckDefault: checks are on by default only where update_url was set by hand.
+func (c Config) updateCheckDefault() string {
+	if c.UpdateURL != "" {
+		return "1"
+	}
+	return "0"
 }

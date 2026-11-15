@@ -24,7 +24,7 @@ Junction reads `/etc/junction/config.json` at start (`junctiond -config <path>` 
 | `router_url`, `router_user`, `router_password` | none | Optional, not needed for Junction to work: read your router's device list for better names. Supported routers: [routers.md](routers.md). |
 | `brand_name` | `"Junction"` | The name in the top bar (also in Settings → General). |
 | `backup_name`, `backup_ip` | `"Backup"`, keepalived's peer | How the backup gateway box is shown. |
-| `update_url` | none | A GitHub releases API URL (e.g. `https://api.github.com/repos/XIVIX134/junction/releases/latest`). When set, the Health page offers new versions and installs them with automatic rollback. |
+| `update_url` | the official releases (`https://api.github.com/repos/XIVIX134/junction/releases/latest`) | Where to look for new versions: a GitHub releases API address, e.g. a fork's. Looking is off until you turn on Settings → Updates (it's on by default only where `update_url` is set by hand); the Health page then offers new versions and installs them with automatic rollback. |
 | `seed_names`, `seed_groups` | none | `{ "<mac>": "name" }`: names and groups to start with, before you rename devices in the app. |
 
 ## `failover`

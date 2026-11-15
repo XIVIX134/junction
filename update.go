@@ -161,7 +161,7 @@ func (s *State) versionInfo() HealthVersion {
 func (s *State) checkForUpdate() {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	rel, err := fetchRelease(ctx, s.cfg.UpdateURL, "")
+	rel, err := fetchRelease(ctx, s.cfg.updateURL(), "")
 	u := &s.update
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -357,7 +357,7 @@ func unpack(tgz, dest, top string) error {
 // installUpdate downloads, checks and unpacks release v, then starts
 // safe-update.sh; done runs when the script ends (not on an error).
 func (s *State) installUpdate(ctx context.Context, v string, done func()) error {
-	rel, err := fetchRelease(ctx, s.cfg.UpdateURL, v)
+	rel, err := fetchRelease(ctx, s.cfg.updateURL(), v)
 	if err != nil {
 		return fmt.Errorf("couldn't find version %s: %v", v, err)
 	}
@@ -427,8 +427,8 @@ func (s *State) installUpdate(ctx context.Context, v string, done func()) error 
 
 func (a *API) postUpdate(w http.ResponseWriter, r *http.Request) {
 	s := a.s
-	if s.cfg.UpdateURL == "" {
-		fail(w, http.StatusNotImplemented, "Updating from the app isn't set up on this gateway: add update_url (a GitHub releases API address) to /etc/junction/config.json, or install the new version by hand.")
+	if !s.updateChecks() {
+		fail(w, http.StatusNotImplemented, "Turn on \"Check for new versions\" in Settings → Updates first.")
 		return
 	}
 	var body struct {
@@ -455,4 +455,16 @@ func (a *API) postUpdate(w http.ResponseWriter, r *http.Request) {
 	s.update.pending = &HealthUpdate{Version: body.Version, At: time.Now().UTC().Format(time.RFC3339), Result: "pending"}
 	s.update.mu.Unlock()
 	send(w, s.healthNow(r.Context()))
+}
+
+// startUpdateCheck looks for a new version in the background (now: even if it looked recently).
+func (s *State) startUpdateCheck(now bool) {
+	u := &s.update
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.checking || (!now && time.Since(u.checkedAt) <= updateCheckEvery) {
+		return
+	}
+	u.checking = true
+	go s.checkForUpdate()
 }
