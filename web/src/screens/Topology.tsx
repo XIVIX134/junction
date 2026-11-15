@@ -3,7 +3,7 @@ import type { Overview } from "../api/types";
 import { gatewayShort, isRouter, route, selectedEndpoint, totalToday } from "../clients";
 import { ClientPanel, type Tab } from "../components/ClientPanel";
 import { NeedOverview } from "../components/Shell";
-import { hm } from "../fmt";
+import { bytes, hm, rate } from "../fmt";
 import { navigate, useLocation } from "../router";
 import { Icon, kindOf } from "../ui";
 import { backupLabel } from "../site";
@@ -12,7 +12,7 @@ export function Topology() {
   return <NeedOverview>{(o) => <TopologyView o={o} />}</NeedOverview>;
 }
 
-type NodeT = { x: number; y: number; w: number; icon: string; name: string; sub: string; dot: string; cls?: string; id?: string; go?: string };
+type NodeT = { tip?: string; x: number; y: number; w: number; icon: string; name: string; sub: string; dot: string; cls?: string; id?: string; go?: string };
 type LineT = { d: string; stroke?: string; dash?: string; op?: number };
 type LabelT = { x: number; y: number; t: ReactNode; cls?: string; c?: string };
 
@@ -35,6 +35,14 @@ function TopologyView({ o }: { o: Overview }) {
     lines.push({ d: `M${a[0]} ${a[1]}V${my}H${b[0]}V${b[1]}`, ...extra });
 
   const devs = o.devices;
+  const nodeTip = (n: NodeT) => {
+    const d = n.id ? devs.find((x) => x.id === n.id) : undefined;
+    if (!d) return `${n.name}\n${n.sub}`;
+    const lines = [d.name, `${d.ip} · ${d.online ? "online" : `offline, last seen ${hm(d.lastSeen)}`}${d.group ? ` · ${d.group}` : ""}`];
+    if (d.usesGateway) lines.push(`Now ↓ ${rate(d.rateDown)} ↑ ${rate(d.rateUp)} · today ${bytes(totalToday(d))}`, `${route(d).t}${d.controllable ? "" : " · not controllable"}`);
+    else lines.push("Bypasses the gateway: not counted");
+    return lines.join("\n");
+  };
   const router = devs.find(isRouter);
   const g = o.gateway;
   const ep = selectedEndpoint(o);
@@ -182,7 +190,7 @@ function TopologyView({ o }: { o: Overview }) {
                 type="button"
                 className={`node ${n.cls ?? ""} ${n.id && n.id === sel ? "sel" : ""}`}
                 style={{ left: n.x + dx, top: n.y, width: n.w }}
-                title={n.name}
+                title={nodeTip(n)}
                 aria-label={`${n.name}, ${n.sub}`}
                 onClick={() => (n.id ? open(n.id) : n.go ? navigate(n.go) : undefined)}
               >

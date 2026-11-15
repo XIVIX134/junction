@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { DeviceCategories, DeviceWeek } from "../screens/Analysis";
 import { Columns } from "../charts";
 import { api, ApiError } from "../api/client";
 import type { Device, DeviceDetail, Overview, Profile, Rule, RuleSchedule } from "../api/types";
@@ -289,6 +290,8 @@ function InsightsTab({ d, det, o, err }: { d: Device; det: DeviceDetail | null; 
           )}
         </div>
       </div>
+      {d.usesGateway && <DeviceCategories id={d.id} />}
+      {d.usesGateway && <DeviceWeek id={d.id} />}
       {days.length > 0 && d.usesGateway && (
         <div className="sec">
           <div className="st">

@@ -76,7 +76,7 @@ type trafficHour struct {
 	Up   int64  `json:"up"`
 }
 
-// GET /api/traffic?hours=24 -> { hours: [...] } oldest first, the current hour last
+// GET /api/traffic?hours=24[&device=id] -> { hours: [...] } oldest first, the current hour last
 func (a *API) traffic(w http.ResponseWriter, r *http.Request) {
 	n := 24
 	if v := r.URL.Query().Get("hours"); v != "" {
@@ -93,7 +93,7 @@ func (a *API) traffic(w http.ResponseWriter, r *http.Request) {
 	for i := range out {
 		out[i].Hour = from.Add(time.Duration(i) * time.Hour).UTC().Format(time.RFC3339)
 	}
-	err := a.s.sumUsage(from, now.Add(time.Hour), "", func(h int64, _, _ string, down, up int64) {
+	err := a.s.sumUsage(from, now.Add(time.Hour), r.URL.Query().Get("device"), func(h int64, _, _ string, down, up int64) {
 		i := int((h - from.Unix()) / 3600)
 		if i >= 0 && i < n {
 			out[i].Down += down

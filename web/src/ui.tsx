@@ -147,6 +147,18 @@ const STATE_COL: Record<string, string> = {
 export const stateDot = (s: string) => ({ MASTER: "ok", BACKUP: "warn", FAULT: "bad", STOP: "stop" })[s] ?? "";
 
 /** Gateway state timeline across its recorded changes. */
+const STATE_NAME: Record<string, string> = { MASTER: "Master", BACKUP: "Backup", FAULT: "Fault", STOP: "Stopped" };
+const STATE_MEANS: Record<string, string> = {
+  MASTER: "this gateway carries traffic",
+  BACKUP: "the backup carries traffic, direct, without VPN or controls",
+  FAULT: "this gateway failed its health check and the backup covers",
+  STOP: "keepalived was stopped",
+};
+const span = (ms: number) => {
+  const m = Math.round(ms / 60e3);
+  return m < 1 ? "under a minute" : m < 60 ? `${m} min` : m < 1440 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${Math.floor(m / 1440)} d ${Math.floor((m % 1440) / 60)} h`;
+};
+
 export function StateStrip({ events, now }: { events: GatewayEvent[]; now: number }) {
   if (!events.length) return <div className="note">No state changes recorded.</div>;
   const asc = [...events].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
@@ -161,7 +173,9 @@ export function StateStrip({ events, now }: { events: GatewayEvent[]; now: numbe
           return (
             <i
               key={i}
-              title={`${e.state} ${hms(e.at)}`}
+              className="ss-seg"
+              tabIndex={0}
+              title={`${STATE_NAME[e.state] ?? e.state}: ${STATE_MEANS[e.state] ?? ""}\n${hms(e.at)} → ${i + 1 < asc.length ? hms(asc[i + 1].at) : "now"} · ${span(z - a)}`}
               style={{
                 position: "absolute",
                 top: 0,

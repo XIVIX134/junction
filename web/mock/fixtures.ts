@@ -410,8 +410,9 @@ function usageDays(now: Date, n: number): UsageDay[] {
     for (const s of SPECS) {
       if (!s.usesGateway || !s.exit) continue;
       const b = i === 0 ? hoursToday(s, now).reduce((a, x) => a + x, 0) : dayGB(s, day) * GB;
-      byExit[s.exit] = (byExit[s.exit] ?? 0) + Math.round(b);
-      if (s.exit === "direct") direct += b;
+      const ex = i === 0 ? s.exit : s.group === "Kids" ? "home" : s.short === "D12" && hash(`vpn:${day}`) > 0.55 ? "travel" : s.exit;
+      byExit[ex] = (byExit[ex] ?? 0) + Math.round(b);
+      if (ex === "direct") direct += b;
       else tunnel += b;
     }
     out.push({ day, tunnel: Math.round(tunnel), direct: Math.round(direct), byExit, billed: Math.round((tunnel + direct) * 1.061) });
@@ -1001,4 +1002,133 @@ export function patchDevice(id: string, body: unknown): Device | string | null {
   }
   labels.set(id, cur);
   return device(s, new Date());
+}
+
+// ---------- categories, daily usage per device, one device's hours ----------
+
+// The same idea as categories.go, for the sample sites.
+const MOCK_CATS: [string, string][] = [
+  ["video", "Video streaming"],
+  ["social", "Social media"],
+  ["messaging", "Messaging & calls"],
+  ["ai", "AI & developer tools"],
+  ["gaming", "Gaming"],
+  ["music", "Music & podcasts"],
+  ["updates", "Updates & downloads"],
+  ["cloud", "Cloud & backup"],
+  ["speedtest", "Speed tests"],
+  ["web", "Browsing & other"],
+  ["unnamed", "No site name"],
+];
+const MOCK_DOMAINS: Record<string, string> = {
+  "googlevideo.com": "video", "vdocipher.com": "video", "nflxvideo.net": "video",
+  "fbcdn.net": "social", "instagram.com": "social", "tiktokcdn.com": "social",
+  "whatsapp.net": "messaging", "discord.com": "messaging", "zoom.us": "messaging",
+  "github.com": "ai", "claude.ai": "ai", "api.anthropic.com": "ai", "pypi.org": "ai", "registry-1.docker.io": "ai",
+  "steamcontent.com": "gaming", "spotify.com": "music",
+  "deb.debian.org": "updates", "updates.example.com": "updates", "dl.delivery.mp.microsoft.com": "updates",
+  "backup.googleapis.com": "cloud", "speedtest.example.net": "speedtest",
+};
+function mockCategoryOf(host: string) {
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) return "unnamed";
+  let h = host;
+  for (;;) {
+    if (MOCK_DOMAINS[h]) return MOCK_DOMAINS[h];
+    const i = h.indexOf(".");
+    if (i < 0) return "web";
+    h = h.slice(i + 1);
+  }
+}
+// Extra sites every gateway device also uses a little of, so each category has something.
+const COMMON = ["203.0.113.17", "www.example.org", "dl.delivery.mp.microsoft.com", "backup.googleapis.com", "news.example.com"];
+
+function siteBytes(s: Spec, dayBytes: number, day: string) {
+  const hosts = [...s.hosts, ...COMMON];
+  const w = hosts.map((h, i) => (i < s.hosts.length ? 1 / (i + 1.3) : 0.05) * (0.6 + 0.8 * hash(`${h}:${day}`)));
+  const sum = w.reduce((a, b) => a + b, 0) || 1;
+  return hosts.map((h, i) => ({ host: h, bytes: (dayBytes * 0.92 * w[i]) / sum }));
+}
+
+function dayBytesOf(s: Spec, day: string, now: Date, today: string) {
+  if (!s.usesGateway) return 0;
+  return day === today ? hoursToday(s, now).reduce((a, x) => a + x, 0) : dayGB(s, day) * GB;
+}
+
+export function categories(q: URLSearchParams, now = new Date()) {
+  const days = Math.max(1, Math.min(200, Number(q.get("days") ?? 7) || 7));
+  const dev = q.get("device");
+  const { c, day: today } = todayParts(now);
+  const list = devices(now);
+  const nameOf = (id: string) => list.find((d) => d.id === id)?.name ?? id;
+  type Acc = { bytes: number; prev: number; sites: Map<string, number>; devs: Map<string, number> };
+  const acc = new Map<string, Acc>();
+  let total = 0;
+  let prevTotal = 0;
+  for (let i = 2 * days - 1; i >= 0; i--) {
+    const x = addDays(c.y, c.m, c.d, -i);
+    const day = dayStr(x.y, x.m, x.d);
+    for (const s of SPECS) {
+      if (!s.usesGateway || (dev && idOf(s) !== dev)) continue;
+      for (const { host, bytes } of siteBytes(s, dayBytesOf(s, day, now, today), day)) {
+        const k = mockCategoryOf(host);
+        const a = acc.get(k) ?? { bytes: 0, prev: 0, sites: new Map(), devs: new Map() };
+        acc.set(k, a);
+        if (i >= days) {
+          a.prev += bytes;
+          prevTotal += bytes;
+        } else {
+          a.bytes += bytes;
+          total += bytes;
+          a.sites.set(host, (a.sites.get(host) ?? 0) + bytes);
+          a.devs.set(idOf(s), (a.devs.get(idOf(s)) ?? 0) + bytes);
+        }
+      }
+    }
+  }
+  const from = addDays(c.y, c.m, c.d, -(days - 1));
+  const cats = MOCK_CATS.filter(([k]) => acc.has(k))
+    .map(([key, name]) => {
+      const a = acc.get(key)!;
+      return {
+        key,
+        name,
+        bytes: Math.round(a.bytes),
+        prev: Math.round(a.prev),
+        sites: [...a.sites].map(([host, b]) => ({ host, bytes: Math.round(b) })).sort((x, y) => y.bytes - x.bytes).slice(0, 6),
+        devices: [...a.devs].map(([id, b]) => ({ id, name: nameOf(id), bytes: Math.round(b) })).sort((x, y) => y.bytes - x.bytes).slice(0, 5),
+      };
+    })
+    .sort((x, y) => y.bytes - x.bytes);
+  return { from: dayStr(from.y, from.m, from.d), to: today, days, total: Math.round(total), prevTotal: Math.round(prevTotal), categories: cats };
+}
+
+export function devicesDaily(q: URLSearchParams, now = new Date()) {
+  const n = Math.max(1, Math.min(60, Number(q.get("days") ?? 14) || 14));
+  const { c, day: today } = todayParts(now);
+  const days: string[] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const x = addDays(c.y, c.m, c.d, -i);
+    days.push(dayStr(x.y, x.m, x.d));
+  }
+  const out: Record<string, number[]> = {};
+  for (const s of SPECS) if (s.usesGateway) out[idOf(s)] = days.map((d) => Math.round(dayBytesOf(s, d, now, today)));
+  return { days, devices: out };
+}
+
+/** One device's hours (traffic?device=), oldest first, the current hour last. */
+export function deviceTraffic(id: string, q: URLSearchParams) {
+  const n = Math.max(1, Math.min(168, Number(q.get("hours") ?? 24) || 24));
+  const s = SPECS.find((x) => idOf(x) === id);
+  const now = Date.now();
+  const cur = Math.floor(now / HOUR) * HOUR;
+  const hours = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const h0 = cur - i * HOUR;
+    const c = local(new Date(h0));
+    const frac = Math.min(1, (now - h0) / HOUR);
+    const b = s && s.usesGateway ? hourBytes(s, dayStr(c.y, c.m, c.d), c.h) * frac : 0;
+    const up = s ? UP_SHARE(s) : 0.1;
+    hours.push({ hour: iso(new Date(h0)), down: Math.round(b * (1 - up)), up: Math.round(b * up) });
+  }
+  return { hours };
 }

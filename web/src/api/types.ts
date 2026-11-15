@@ -288,3 +288,16 @@ export type SetupBody = {
 };
 
 export type Session = { required: boolean; signedIn: boolean };
+
+// ---- v1.9: what the network is used for (categories), daily usage per device ----
+
+export type CategoryUsage = {
+  key: "video" | "social" | "messaging" | "ai" | "gaming" | "music" | "updates" | "cloud" | "speedtest" | "web" | "unnamed";
+  name: string;
+  bytes: number;
+  prev: number; // the same-length period before
+  sites: { host: string; bytes: number }[]; // top 6
+  devices: { id: string; name: string; bytes: number }[]; // top 5
+};
+export type CategoriesView = { from: string; to: string; days: number; total: number; prevTotal: number; categories: CategoryUsage[] };
+export type DevicesDaily = { days: string[]; devices: Record<string, number[]> };

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { WhereTrafficWent } from "./Analysis";
 import { api } from "../api/client";
 import type { ExitHealth, Overview, SelectorBody } from "../api/types";
 import { gatewayShort, selectedEndpoint } from "../clients";
@@ -27,6 +28,7 @@ function InternetView({ o }: { o: Overview }) {
       </div>
       <Exits o={o} />
       <LatencyPanel o={o} />
+      <WhereTrafficWent o={o} />
       <div className="grid collapse-md">
         <BundlePanel o={o} />
         <Failover o={o} />

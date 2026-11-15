@@ -22,6 +22,8 @@ func (a *API) routes(mux *http.ServeMux, web fs.FS) {
 	mux.HandleFunc("GET /api/usage", a.usage)
 	mux.HandleFunc("GET /api/traffic", a.traffic)
 	mux.HandleFunc("GET /api/exits/history", a.exitsHistory)
+	mux.HandleFunc("GET /api/categories", a.getCategories)
+	mux.HandleFunc("GET /api/devices/daily", a.devicesDaily)
 	mux.HandleFunc("PUT /api/selector", a.putSelector)
 	a.rulesRoutes(mux)
 	mux.HandleFunc("PUT /api/devices/{id}/vpn", a.putDeviceVPN)

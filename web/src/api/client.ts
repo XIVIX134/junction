@@ -1,4 +1,4 @@
-import type { ExitDraft, ExitTest, Health, Session, Settings, SettingsPatch, SettingsSaved, SetupBody, SetupInfo } from "./types";
+import type { CategoriesView, DevicesDaily, ExitDraft, ExitTest, Health, Session, Settings, SettingsPatch, SettingsSaved, SetupBody, SetupInfo } from "./types";
 import type {
   BundleState,
   CheckBody,
@@ -122,7 +122,9 @@ export const api = {
     if (q.before != null) p.set("before", String(q.before));
     return request<JEvent[]>("GET", `/api/events?${p}`);
   },
-  traffic: (hours = 24) => request<TrafficHours>("GET", `/api/traffic?hours=${hours}`),
+  traffic: (hours = 24, device?: string) => request<TrafficHours>("GET", `/api/traffic?hours=${hours}${device ? `&device=${encodeURIComponent(device)}` : ""}`),
+  categories: (days = 7, device?: string) => request<CategoriesView>("GET", `/api/categories?days=${days}${device ? `&device=${encodeURIComponent(device)}` : ""}`),
+  devicesDaily: (days = 14) => request<DevicesDaily>("GET", `/api/devices/daily?days=${days}`),
   exitHistory: (minutes = 60) => request<ExitHistory>("GET", `/api/exits/history?minutes=${minutes}`),
   bundle: () => request<BundleState>("GET", "/api/bundle"),
   renew: (b: RenewalBody) => request<BundleState>("POST", "/api/bundle/renewals", b),

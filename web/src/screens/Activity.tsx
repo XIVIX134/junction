@@ -1,4 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useFresh } from "../charts2";
+import { EventsChart } from "./Analysis";
 import { api, ApiError } from "../api/client";
 import type { JEvent, Overview } from "../api/types";
 import { NeedOverview } from "../components/Shell";
@@ -8,7 +10,16 @@ import { deviceHref, navigate, useLocation } from "../router";
 import { Icon, kindOf, stateDot } from "../ui";
 
 const PAGE = 100;
-const KINDS = ["control", "rule", "limit", "device", "gateway", "exit", "isp", "dhcp"]; // "isp": old WE-counter events (removed in v1.7), shown only when there are some
+const KINDS = [
+  "control",
+  "rule",
+  "limit",
+  "device",
+  "gateway",
+  "exit",
+  "isp",
+  "dhcp",
+]; // "isp": old WE-counter events (removed in v1.7), shown only when there are some
 
 export function Activity() {
   return <NeedOverview>{(o) => <ActivityView o={o} />}</NeedOverview>;
@@ -28,7 +39,11 @@ function ActivityView({ o }: { o: Overview }) {
     setBusy(true);
     setErr(null);
     try {
-      const page = await api.events({ limit: PAGE, device: dev || null, before });
+      const page = await api.events({
+        limit: PAGE,
+        device: dev || null,
+        before,
+      });
       setMore(page.length === PAGE);
       setEvents((prev) => (before == null ? page : [...(prev ?? []), ...page]));
     } catch (e) {
@@ -65,8 +80,14 @@ function ActivityView({ o }: { o: Overview }) {
   // gateway state changes come from the overview; only include them when no device filter is set
   const all = feed(events ?? [], dev ? null : o);
   const rows = all.filter((e) => kind === "all" || e.kind === kind);
+  const freshIds = useFresh(rows.map((e) => e.id));
   const byId = new Map(o.devices.map((d) => [d.id, d]));
-  const devIds = [...new Set([...(events ?? []).map((e) => e.deviceId).filter(Boolean) as string[], ...(dev ? [dev] : [])])];
+  const devIds = [
+    ...new Set([
+      ...((events ?? []).map((e) => e.deviceId).filter(Boolean) as string[]),
+      ...(dev ? [dev] : []),
+    ]),
+  ];
   const name = (id: string) => byId.get(id)?.name ?? null;
 
   const body: ReactNode[] = [];
@@ -79,7 +100,8 @@ function ActivityView({ o }: { o: Overview }) {
       body.push(
         <tr className="day" key={`d${k}`}>
           <td colSpan={4}>
-            {DAYN[d.dow]}, {d.d} {MON[d.mo - 1]} <span className="t3">· {n} events</span>
+            {DAYN[d.dow]}, {d.d} {MON[d.mo - 1]}{" "}
+            <span className="t3">· {n} events</span>
           </td>
         </tr>,
       );
@@ -88,18 +110,22 @@ function ActivityView({ o }: { o: Overview }) {
     const dn = e.deviceId ? name(e.deviceId) : null;
     const dd = e.deviceId ? byId.get(e.deviceId) : undefined;
     body.push(
-      <tr key={e.id}>
+      <tr key={e.id} className={freshIds.has(e.id) ? "fresh" : undefined}>
         <td className="t2" style={{ width: 90 }}>
           {hms(e.at)}
         </td>
         <td style={{ width: 96 }}>
           {e.kind === "gateway" && e.st ? (
-            <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+            <span
+              style={{ display: "inline-flex", gap: 6, alignItems: "center" }}
+            >
               <span className={`dot ${stateDot(e.st)}`} />
               <span className="t2">Gateway</span>
             </span>
           ) : (
-            <span className={e.kind === "limit" ? "warnc" : "t2"}>{KIND_LABEL[e.kind] ?? e.kind}</span>
+            <span className={e.kind === "limit" ? "warnc" : "t2"}>
+              {KIND_LABEL[e.kind] ?? e.kind}
+            </span>
           )}
         </td>
         <td style={{ width: 220 }}>
@@ -119,7 +145,8 @@ function ActivityView({ o }: { o: Overview }) {
               </a>
             ) : (
               <>
-                <span className="t3 mono">{e.deviceId}</span> <span className="t3">· removed</span>
+                <span className="t3 mono">{e.deviceId}</span>{" "}
+                <span className="t3">· removed</span>
               </>
             )
           ) : (
@@ -135,21 +162,44 @@ function ActivityView({ o }: { o: Overview }) {
     <div className="page">
       <div className="ph">
         <h1>Activity</h1>
-        <span className="meta">{all.length} events loaded · gateway log and failover state changes</span>
+        <span className="meta">
+          {all.length} events loaded · gateway log and failover state changes
+        </span>
       </div>
+      <EventsChart />
       <div className="toolbar">
         <div className="seg" role="group" aria-label="Event type">
-          <button type="button" aria-pressed={kind === "all"} onClick={() => set("kind", "all")}>
+          <button
+            type="button"
+            aria-pressed={kind === "all"}
+            onClick={() => set("kind", "all")}
+          >
             All<span className="c">{all.length}</span>
           </button>
-          {KINDS.filter((k) => (k !== "dhcp" && k !== "isp") || all.some((e) => e.kind === k)).map((k) => (
-            <button key={k} type="button" aria-pressed={kind === k} onClick={() => set("kind", k)}>
+          {KINDS.filter(
+            (k) =>
+              (k !== "dhcp" && k !== "isp") || all.some((e) => e.kind === k),
+          ).map((k) => (
+            <button
+              key={k}
+              type="button"
+              aria-pressed={kind === k}
+              onClick={() => set("kind", k)}
+            >
               {KIND_LABEL[k]}
-              <span className="c">{all.filter((e) => e.kind === k).length}</span>
+              <span className="c">
+                {all.filter((e) => e.kind === k).length}
+              </span>
             </button>
           ))}
         </div>
-        <select className="inp" style={{ width: 210 }} aria-label="Device" value={dev} onChange={(e) => set("device", e.target.value)}>
+        <select
+          className="inp"
+          style={{ width: 210 }}
+          aria-label="Device"
+          value={dev}
+          onChange={(e) => set("device", e.target.value)}
+        >
           <option value="">All devices</option>
           {[...new Set([...o.devices.map((d) => d.id), ...devIds])]
             .map((id) => ({ id, n: name(id) ?? `${id} (removed)` }))
@@ -160,7 +210,10 @@ function ActivityView({ o }: { o: Overview }) {
               </option>
             ))}
         </select>
-        <span className="t3 hide-m" style={{ marginLeft: "auto", fontSize: 12 }}>
+        <span
+          className="t3 hide-m"
+          style={{ marginLeft: "auto", fontSize: 12 }}
+        >
           Newest first
         </span>
       </div>
@@ -185,7 +238,11 @@ function ActivityView({ o }: { o: Overview }) {
               body
             ) : (
               <tr>
-                <td colSpan={4} className="t3" style={{ height: 70, textAlign: "center" }}>
+                <td
+                  colSpan={4}
+                  className="t3"
+                  style={{ height: 70, textAlign: "center" }}
+                >
                   {err ?? "No events of this type."}
                 </td>
               </tr>
@@ -193,11 +250,22 @@ function ActivityView({ o }: { o: Overview }) {
           </tbody>
         </table>
         {events && more && (
-          <div style={{ padding: "10px 14px", borderTop: "1px solid var(--line)" }}>
-            <button type="button" className="btn sm" disabled={busy} onClick={() => load(events[events.length - 1]?.id ?? null)}>
+          <div
+            style={{ padding: "10px 14px", borderTop: "1px solid var(--line)" }}
+          >
+            <button
+              type="button"
+              className="btn sm"
+              disabled={busy}
+              onClick={() => load(events[events.length - 1]?.id ?? null)}
+            >
               {busy ? "Loading…" : "Load older"}
             </button>
-            {err && <span className="err" style={{ marginLeft: 10 }}>{err}</span>}
+            {err && (
+              <span className="err" style={{ marginLeft: 10 }}>
+                {err}
+              </span>
+            )}
           </div>
         )}
       </div>

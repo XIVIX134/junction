@@ -1,15 +1,34 @@
 import { useState, type ReactNode } from "react";
 import type { Device, Overview } from "../api/types";
-import { effVpn, isRouter, limited, onVpn, route, status, totalToday } from "../clients";
+import {
+  effVpn,
+  isRouter,
+  limited,
+  onVpn,
+  route,
+  status,
+  totalToday,
+} from "../clients";
 import { ClientPanel, type Tab } from "../components/ClientPanel";
 import { NeedOverview } from "../components/Shell";
-import { useDeviceActions, useDeviceControlState, withPending } from "../deviceControl";
-import { bytes, rate } from "../fmt";
+import {
+  useDeviceActions,
+  useDeviceControlState,
+  withPending,
+} from "../deviceControl";
+import { bytes, dmy, rate } from "../fmt";
+import { api } from "../api/client";
+import { MiniBars } from "../charts2";
+import { useFetch } from "../live";
 import { deviceHref, navigate, useLocation } from "../router";
 import { Icon, kindOf, Sw } from "../ui";
 
 export function Clients({ id, tab }: { id: string | null; tab: Tab }) {
-  return <NeedOverview>{(o) => <ClientsView o={o} id={id} tab={tab} />}</NeedOverview>;
+  return (
+    <NeedOverview>
+      {(o) => <ClientsView o={o} id={id} tab={tab} />}
+    </NeedOverview>
+  );
 }
 
 type F = "all" | "online" | "vpn" | "limited" | "bypass";
@@ -20,8 +39,18 @@ const FILTERS: [F, string, (d: Device) => boolean][] = [
   ["limited", "Limited", limited],
   ["bypass", "Bypassing", (d) => !d.usesGateway && !isRouter(d)],
 ];
-type ColKey = "name" | "status" | "ip" | "route" | "down" | "up" | "today" | "vpn";
-const COLS: [ColKey, string, (d: Device) => string | number | boolean, boolean?][] = [
+type ColKey =
+  "name" | "status" | "ip" | "route" | "down" | "up" | "today" | "week" | "vpn";
+
+// Each device's bytes per day over the last 7 days (set on every render, before sorting).
+let WEEK = new Map<string, number[]>();
+const weekSum = (id: string) => (WEEK.get(id) ?? []).reduce((a, b) => a + b, 0);
+const COLS: [
+  ColKey,
+  string,
+  (d: Device) => string | number | boolean,
+  boolean?,
+][] = [
   ["name", "Name", (d) => d.name.toLowerCase()],
   ["status", "Status", (d) => (d.online ? 0 : 1)],
   ["ip", "IP", (d) => +d.ip.split(".")[3]],
@@ -29,10 +58,19 @@ const COLS: [ColKey, string, (d: Device) => string | number | boolean, boolean?]
   ["down", "Down now", (d) => d.rateDown, true],
   ["up", "Up now", (d) => d.rateUp, true],
   ["today", "Today", (d) => (d.usesGateway ? totalToday(d) : -1), true],
+  ["week", "Last 7 days", (d) => (d.usesGateway ? weekSum(d.id) : -1), true],
   ["vpn", "VPN", (d) => effVpn(d)],
 ];
 
-function ClientsView({ o, id, tab }: { o: Overview; id: string | null; tab: Tab }) {
+function ClientsView({
+  o,
+  id,
+  tab,
+}: {
+  o: Overview;
+  id: string | null;
+  tab: Tab;
+}) {
   const { query } = useLocation();
   const q = (query.get("q") ?? "").toLowerCase();
   const [filter, setFilter] = useState<F>("all");
@@ -41,25 +79,62 @@ function ClientsView({ o, id, tab }: { o: Overview; id: string | null; tab: Tab 
   const ctl = useDeviceControlState();
   const act = useDeviceActions();
   const devs = o.devices.map((d) => withPending(d, ctl));
+  const daily = useFetch(
+    "devices-daily-7",
+    () => api.devicesDaily(7),
+    120000,
+  ).data;
+  WEEK = new Map(Object.entries(daily?.devices ?? {}));
+  const dayLabels = (daily?.days ?? []).map((k, i, a) =>
+    i === a.length - 1 ? "today" : dmy(`${k}T12:00:00Z`),
+  );
   const f = FILTERS.find((x) => x[0] === filter)![2];
   const c = COLS.find((x) => x[0] === sort[0])!;
   const rows = devs
     .filter(f)
     .filter((d) => !group || (d.group || "Ungrouped") === group)
-    .filter((d) => !q || [d.name, d.ip, d.mac ?? "", d.group ?? "", d.vendor ?? "", d.autoName ?? "", ...(d.links ?? []).flatMap((l) => [l.ip, l.mac, l.name])].join(" ").toLowerCase().includes(q))
+    .filter(
+      (d) =>
+        !q ||
+        [
+          d.name,
+          d.ip,
+          d.mac ?? "",
+          d.group ?? "",
+          d.vendor ?? "",
+          d.autoName ?? "",
+          ...(d.links ?? []).flatMap((l) => [l.ip, l.mac, l.name]),
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(q),
+    )
     .sort((a, b) => {
       const x = c[2](a);
       const y = c[2](b);
-      return (x > y ? 1 : x < y ? -1 : 0) * sort[1] || a.name.localeCompare(b.name);
+      return (
+        (x > y ? 1 : x < y ? -1 : 0) * sort[1] || a.name.localeCompare(b.name)
+      );
     });
-  const groups = [...new Set(devs.filter((d) => !isRouter(d)).map((d) => d.group || "Ungrouped"))].sort();
+  const groups = [
+    ...new Set(
+      devs.filter((d) => !isRouter(d)).map((d) => d.group || "Ungrouped"),
+    ),
+  ].sort();
   const known = devs.filter((d) => !isRouter(d));
   const qs = query.toString();
-  const open = (devId: string, t: Tab = id ? tab : "overview") => navigate(`${deviceHref(devId)}/${t}${qs ? `?${qs}` : ""}`, { replace: !!id });
-  const close = () => navigate(`/clients${qs ? `?${qs}` : ""}`, { replace: true });
+  const open = (devId: string, t: Tab = id ? tab : "overview") =>
+    navigate(`${deviceHref(devId)}/${t}${qs ? `?${qs}` : ""}`, {
+      replace: !!id,
+    });
+  const close = () =>
+    navigate(`/clients${qs ? `?${qs}` : ""}`, { replace: true });
 
   // Group-wide VPN, when one real group is picked
-  const gDevs = group && group !== "Ungrouped" ? devs.filter((d) => d.group === group && d.controllable) : [];
+  const gDevs =
+    group && group !== "Ungrouped"
+      ? devs.filter((d) => d.group === group && d.controllable)
+      : [];
   const gOn = gDevs.length > 0 && gDevs.every((d) => d.vpn);
   const gBusy = ctl.busy.has(`group:${group}`);
   const gErr = ctl.errors.get(`group:${group}`);
@@ -69,7 +144,9 @@ function ClientsView({ o, id, tab }: { o: Overview; id: string | null; tab: Tab 
       on={!!d.controllable && effVpn(d)}
       label={`VPN, ${d.name}`}
       disabled={!d.controllable}
-      reason={d.controllable ? undefined : "Not controllable: bypasses the gateway"}
+      reason={
+        d.controllable ? undefined : "Not controllable: bypasses the gateway"
+      }
       busy={ctl.busy.has(d.id)}
       onChange={(on) => act.setVpn(d, on)}
     />
@@ -87,13 +164,25 @@ function ClientsView({ o, id, tab }: { o: Overview; id: string | null; tab: Tab 
         <div className="toolbar">
           <div className="seg" role="group" aria-label="Filter clients">
             {FILTERS.map(([k, l, ff]) => (
-              <button key={k} type="button" aria-pressed={filter === k} className={filter === k ? "on" : ""} onClick={() => setFilter(k)}>
+              <button
+                key={k}
+                type="button"
+                aria-pressed={filter === k}
+                className={filter === k ? "on" : ""}
+                onClick={() => setFilter(k)}
+              >
                 {l}
                 <span className="c">{devs.filter(ff).length}</span>
               </button>
             ))}
           </div>
-          <select className="inp" style={{ width: 150 }} aria-label="Group" value={group} onChange={(e) => setGroup(e.target.value)}>
+          <select
+            className="inp"
+            style={{ width: 150 }}
+            aria-label="Group"
+            value={group}
+            onChange={(e) => setGroup(e.target.value)}
+          >
             <option value="">All groups</option>
             {groups.map((g) => (
               <option key={g} value={g}>
@@ -102,21 +191,47 @@ function ClientsView({ o, id, tab }: { o: Overview; id: string | null; tab: Tab 
             ))}
           </select>
           {gDevs.length > 0 && (
-            <span className="hide-m" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span
+              className="hide-m"
+              style={{ display: "flex", gap: 8, alignItems: "center" }}
+            >
               <span className="t2">VPN for {group}</span>
-              <Sw on={gOn} label={`Group VPN, ${group}`} busy={gBusy} onChange={(on) => act.setGroupVpn(group, devs.filter((d) => d.group === group), on)} />
+              <Sw
+                on={gOn}
+                label={`Group VPN, ${group}`}
+                busy={gBusy}
+                onChange={(on) =>
+                  act.setGroupVpn(
+                    group,
+                    devs.filter((d) => d.group === group),
+                    on,
+                  )
+                }
+              />
               {gErr && <span className="err">{gErr}</span>}
             </span>
           )}
           {q && (
             <span className="tag acc" style={{ gap: 6 }}>
               “{query.get("q")}”
-              <button type="button" className="linkbtn" aria-label="Clear search" onClick={() => navigate(id ? `${deviceHref(id)}/${tab}` : "/clients", { replace: true })}>
+              <button
+                type="button"
+                className="linkbtn"
+                aria-label="Clear search"
+                onClick={() =>
+                  navigate(id ? `${deviceHref(id)}/${tab}` : "/clients", {
+                    replace: true,
+                  })
+                }
+              >
                 <Icon n="x" s={10} />
               </button>
             </span>
           )}
-          <span className="t3 hide-m" style={{ marginLeft: "auto", fontSize: 12, whiteSpace: "nowrap" }}>
+          <span
+            className="t3 hide-m"
+            style={{ marginLeft: "auto", fontSize: 12, whiteSpace: "nowrap" }}
+          >
             Rates: live, 3 s average
           </span>
         </div>
@@ -126,14 +241,29 @@ function ClientsView({ o, id, tab }: { o: Overview; id: string | null; tab: Tab 
             <thead>
               <tr>
                 {COLS.map(([k, l, , num]) => (
-                  <th key={k} className={`s ${num ? "rt" : ""}`} style={k === "vpn" ? { width: 60 } : undefined} aria-sort={sort[0] === k ? (sort[1] > 0 ? "ascending" : "descending") : undefined}>
+                  <th
+                    key={k}
+                    className={`s ${num ? "rt" : ""}`}
+                    style={k === "vpn" ? { width: 60 } : undefined}
+                    aria-sort={
+                      sort[0] === k
+                        ? sort[1] > 0
+                          ? "ascending"
+                          : "descending"
+                        : undefined
+                    }
+                  >
                     <button
                       type="button"
                       className="sortb"
-                      onClick={() => setSort([k, sort[0] === k ? -sort[1] : num ? -1 : 1])}
+                      onClick={() =>
+                        setSort([k, sort[0] === k ? -sort[1] : num ? -1 : 1])
+                      }
                     >
                       {l}
-                      {sort[0] === k && <span className="ar">{sort[1] > 0 ? "↑" : "↓"}</span>}
+                      {sort[0] === k && (
+                        <span className="ar">{sort[1] > 0 ? "↑" : "↓"}</span>
+                      )}
                     </button>
                   </th>
                 ))}
@@ -146,12 +276,20 @@ function ClientsView({ o, id, tab }: { o: Overview; id: string | null; tab: Tab 
                   const s = status(d, [], o.now);
                   const gw = d.usesGateway;
                   return (
-                    <tr key={d.id} className={`rw ${id === d.id ? "sel" : ""} ${d.controllable ? "" : "dim"}`} onClick={() => open(d.id)}>
+                    <tr
+                      key={d.id}
+                      className={`rw ${id === d.id ? "sel" : ""} ${d.controllable ? "" : "dim"}`}
+                      onClick={() => open(d.id)}
+                    >
                       <td className="nm">
                         <Icon n={kindOf(d)} s={16} />
                         <a
                           href={`${deviceHref(d.id)}/overview`}
-                          style={{ color: d.controllable ? "var(--text)" : "var(--text2)" }}
+                          style={{
+                            color: d.controllable
+                              ? "var(--text)"
+                              : "var(--text2)",
+                          }}
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -168,23 +306,66 @@ function ClientsView({ o, id, tab }: { o: Overview; id: string | null; tab: Tab 
                         {d.group && <span className="tag">{d.group}</span>}
                       </td>
                       <td>
-                        <span style={{ display: "inline-flex", gap: 7, alignItems: "center" }}>
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            gap: 7,
+                            alignItems: "center",
+                          }}
+                        >
                           <span className={`dot ${s.c}`} />
                           <span className={s.c ? "" : "t3"}>{s.t}</span>
                         </span>
                       </td>
                       <td className="t2">{d.ip}</td>
                       <td className={r.c}>{r.t}</td>
-                      <td className="rt">{gw ? rate(d.rateDown) : <span className="t3">—</span>}</td>
-                      <td className="rt">{gw ? rate(d.rateUp) : <span className="t3">—</span>}</td>
-                      <td className="rt">{gw ? bytes(totalToday(d)) : <span className="t3">Not counted</span>}</td>
-                      <td onClick={(e) => e.stopPropagation()}>{vpnSwitch(d)}</td>
+                      <td className="rt">
+                        {gw &&
+                          d.online &&
+                          (d.rateDown + d.rateUp) * 8 > 200e3 && (
+                            <span className="eq" title="Moving data right now">
+                              <i />
+                              <i />
+                              <i />
+                            </span>
+                          )}
+                        {gw ? rate(d.rateDown) : <span className="t3">—</span>}
+                      </td>
+                      <td className="rt">
+                        {gw ? rate(d.rateUp) : <span className="t3">—</span>}
+                      </td>
+                      <td className="rt">
+                        {gw ? (
+                          bytes(totalToday(d))
+                        ) : (
+                          <span className="t3">Not counted</span>
+                        )}
+                      </td>
+                      <td className="rt" onClick={(e) => e.stopPropagation()}>
+                        {gw && WEEK.get(d.id) ? (
+                          <MiniBars
+                            vals={WEEK.get(d.id)!}
+                            labels={dayLabels}
+                            fmt={(v) => bytes(v)}
+                            label={`${d.name}, last 7 days`}
+                          />
+                        ) : (
+                          <span className="t3">—</span>
+                        )}
+                      </td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        {vpnSwitch(d)}
+                      </td>
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan={8} style={{ height: 80, textAlign: "center" }} className="t3">
+                  <td
+                    colSpan={9}
+                    style={{ height: 80, textAlign: "center" }}
+                    className="t3"
+                  >
                     No clients match this filter.
                   </td>
                 </tr>
@@ -194,7 +375,15 @@ function ClientsView({ o, id, tab }: { o: Overview; id: string | null; tab: Tab 
           {Array.from(ctl.errors.entries())
             .filter(([k]) => rows.some((d) => d.id === k))
             .map(([k, v]) => (
-              <div key={k} className="err" role="alert" style={{ padding: "8px 14px", borderTop: "1px solid var(--line)" }}>
+              <div
+                key={k}
+                className="err"
+                role="alert"
+                style={{
+                  padding: "8px 14px",
+                  borderTop: "1px solid var(--line)",
+                }}
+              >
                 {rows.find((d) => d.id === k)?.name}: {v}
               </div>
             ))}
@@ -204,20 +393,41 @@ function ClientsView({ o, id, tab }: { o: Overview; id: string | null; tab: Tab 
           <PhoneList rows={rows} open={open} vpnSwitch={vpnSwitch} />
         </div>
       </div>
-      {id && <ClientPanel id={id} tab={tab} o={o} onTab={(t) => open(id, t)} onClose={close} />}
+      {id && (
+        <ClientPanel
+          id={id}
+          tab={tab}
+          o={o}
+          onTab={(t) => open(id, t)}
+          onClose={close}
+        />
+      )}
     </div>
   );
 }
 
-function PhoneList({ rows, open, vpnSwitch }: { rows: Device[]; open: (id: string) => void; vpnSwitch: (d: Device) => ReactNode }) {
-  if (!rows.length) return <div className="empty">No clients match this filter.</div>;
+function PhoneList({
+  rows,
+  open,
+  vpnSwitch,
+}: {
+  rows: Device[];
+  open: (id: string) => void;
+  vpnSwitch: (d: Device) => ReactNode;
+}) {
+  if (!rows.length)
+    return <div className="empty">No clients match this filter.</div>;
   const a = rows.filter((d) => d.controllable);
   const b = rows.filter((d) => !d.controllable);
   const row = (d: Device) => {
     const r = route(d);
     const s = status(d);
     return (
-      <div key={d.id} className={`pr ${d.controllable ? "" : "dim"}`} onClick={() => open(d.id)}>
+      <div
+        key={d.id}
+        className={`pr ${d.controllable ? "" : "dim"}`}
+        onClick={() => open(d.id)}
+      >
         <Icon n={kindOf(d)} s={18} />
         <div className="tx">
           <div className="n">
@@ -234,7 +444,10 @@ function PhoneList({ rows, open, vpnSwitch }: { rows: Device[]; open: (id: strin
             {d.group && <span className="tag">{d.group}</span>}
           </div>
           <div className="s">
-            <span className={`dot ${s.c}`} style={{ width: 6, height: 6, marginRight: 5 }} />
+            <span
+              className={`dot ${s.c}`}
+              style={{ width: 6, height: 6, marginRight: 5 }}
+            />
             {d.ip} · {r.t}
           </div>
         </div>
@@ -244,15 +457,23 @@ function PhoneList({ rows, open, vpnSwitch }: { rows: Device[]; open: (id: strin
             <div className="t3">{bytes(totalToday(d))} today</div>
           </div>
         )}
-        {d.controllable && <span onClick={(e) => e.stopPropagation()}>{vpnSwitch(d)}</span>}
+        {d.controllable && (
+          <span onClick={(e) => e.stopPropagation()}>{vpnSwitch(d)}</span>
+        )}
       </div>
     );
   };
   return (
     <>
-      {a.length > 0 && <div className="gh">Through the gateway · {a.length}</div>}
+      {a.length > 0 && (
+        <div className="gh">Through the gateway · {a.length}</div>
+      )}
       {a.map(row)}
-      {b.length > 0 && <div className="gh">Bypasses gateway · {b.length} · not counted, not controllable</div>}
+      {b.length > 0 && (
+        <div className="gh">
+          Bypasses gateway · {b.length} · not counted, not controllable
+        </div>
+      )}
       {b.map(row)}
     </>
   );

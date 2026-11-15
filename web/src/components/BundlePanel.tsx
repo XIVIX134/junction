@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { Columns, LineChart } from "../charts";
+import { Columns, CountUp, LineChart } from "../charts";
 import { api, ApiError } from "../api/client";
 import type { Bundle, BundleState, Overview, UsageDay } from "../api/types";
 import { bumpEvents } from "../events";
@@ -10,7 +10,8 @@ import { useFetch, useLive } from "../live";
 // The bundle as Junction counts it: whole packets on the wire (wire.go), counting
 // down from the last renewal or from the "left" you set by hand.
 
-const gbs = (b: number) => `${(b / 1e9).toFixed(Math.abs(b) >= 10e9 ? 1 : 2)} GB`;
+const gbs = (b: number) =>
+  `${(b / 1e9).toFixed(Math.abs(b) >= 10e9 ? 1 : 2)} GB`;
 const DAY = 864e5;
 
 /** The current bundle, worked out for display. Bytes throughout. */
@@ -27,19 +28,30 @@ export type BundleView = {
   earlyDays: number | null; // runs out this many days before the bundle ends
 };
 
-export function bundleView(b: Bundle | null | undefined, now: number): BundleView | null {
+export function bundleView(
+  b: Bundle | null | undefined,
+  now: number,
+): BundleView | null {
   if (!b) return null;
   const cycleEnd = b.expiresAt;
   const runsOut = b.runsOut ? Date.parse(b.runsOut) : null;
-  const earlyDays = runsOut && cycleEnd ? Math.floor((Date.parse(cycleEnd) - runsOut) / DAY) : null;
+  const earlyDays =
+    runsOut && cycleEnd
+      ? Math.floor((Date.parse(cycleEnd) - runsOut) / DAY)
+      : null;
   return {
     size: b.size,
     cycleStart: b.renewedAt,
     cycleEnd,
-    renewInDays: cycleEnd ? Math.max(0, Math.ceil((Date.parse(cycleEnd) - now) / DAY)) : null,
+    renewInDays: cycleEnd
+      ? Math.max(0, Math.ceil((Date.parse(cycleEnd) - now) / DAY))
+      : null,
     used: Math.max(0, b.size - b.left),
     left: b.left,
-    setLeft: b.anchor.kind === "check" ? { amount: b.anchor.amount, at: b.anchor.at } : null,
+    setLeft:
+      b.anchor.kind === "check"
+        ? { amount: b.anchor.amount, at: b.anchor.at }
+        : null,
     pace: b.pacePerDay > 0 ? b.pacePerDay : null,
     runsOut,
     earlyDays: earlyDays != null && earlyDays > 0 ? earlyDays : null,
@@ -58,7 +70,8 @@ export function BundlePanel({ o }: { o: Overview }) {
   const logRef = useRef<HTMLDetailsElement>(null);
   const loaded = !!st.data;
   useEffect(() => {
-    if (loaded && (location.hash === "#bundle" || location.hash === "#renew")) ref.current?.scrollIntoView({ block: "start" });
+    if (loaded && (location.hash === "#bundle" || location.hash === "#renew"))
+      ref.current?.scrollIntoView({ block: "start" });
   }, [loaded]);
 
   const now = Date.parse(o.now);
@@ -68,11 +81,19 @@ export function BundlePanel({ o }: { o: Overview }) {
   function renewed() {
     setForm("renew");
     setLogOpen(true);
-    requestAnimationFrame(() => logRef.current?.scrollIntoView({ block: "nearest" }));
+    requestAnimationFrame(() =>
+      logRef.current?.scrollIntoView({ block: "nearest" }),
+    );
   }
 
   return (
-    <section className="pn c12" id="bundle" ref={ref} aria-labelledby="b-h" style={{ scrollMarginTop: 12 }}>
+    <section
+      className="pn c12"
+      id="bundle"
+      ref={ref}
+      aria-labelledby="b-h"
+      style={{ scrollMarginTop: 12 }}
+    >
       <div className="hd">
         <h2 id="b-h">Bundle</h2>
         {v && <span className="t2">{(v.size / 1e9).toFixed(0)} GB</span>}
@@ -80,7 +101,9 @@ export function BundlePanel({ o }: { o: Overview }) {
           <span className="t3">
             {dmy(v.cycleStart)}
             {v.cycleEnd ? ` → ${dmy(v.cycleEnd)}` : ""}
-            {v.renewInDays != null ? ` · renews in ${v.renewInDays} day${v.renewInDays === 1 ? "" : "s"}` : ""}
+            {v.renewInDays != null
+              ? ` · renews in ${v.renewInDays} day${v.renewInDays === 1 ? "" : "s"}`
+              : ""}
           </span>
         )}
         <div className="r">
@@ -102,7 +125,10 @@ export function BundlePanel({ o }: { o: Overview }) {
         ) : (
           <>
             <div>
-              <span className={`big ${v.left <= 0 ? "badc" : ""}`}>{gbs(v.left)}</span> <span className="t2">left</span>
+              <span className={`big ${v.left <= 0 ? "badc" : ""}`}>
+                <CountUp value={v.left} fmt={gbs} ms={900} />
+              </span>{" "}
+              <span className="t2">left</span>
             </div>
             <div className="note" style={{ marginTop: 2 }}>
               {bytes(v.used)} used, whole packets as your ISP bills them ·{" "}
@@ -112,10 +138,17 @@ export function BundlePanel({ o }: { o: Overview }) {
             </div>
             <UsedBar v={v} />
             <div className="facts">
-              <Fact k="Pace" v={v.pace ? `${bytes(v.pace)}/day` : "Needs 6 h"} />
+              <Fact
+                k="Pace"
+                v={v.pace ? `${bytes(v.pace)}/day` : "Needs 6 h"}
+              />
               <Fact
                 k="Runs out"
-                v={v.runsOut ? `~${dmy(v.runsOut)}${v.earlyDays ? `, ${v.earlyDays} day${v.earlyDays === 1 ? "" : "s"} early` : ""}` : "—"}
+                v={
+                  v.runsOut
+                    ? `~${dmy(v.runsOut)}${v.earlyDays ? `, ${v.earlyDays} day${v.earlyDays === 1 ? "" : "s"} early` : ""}`
+                    : "—"
+                }
                 cls={v.earlyDays ? "warnc" : ""}
               />
               <Fact k="Through VPN" v={bytes(b.tunnel)} />
@@ -144,8 +177,16 @@ export function UsedBar({ v, compact }: { v: BundleView; compact?: boolean }) {
   const pct = `${Math.max(0, Math.min(100, (v.used / v.size) * 100))}%`;
   return (
     <>
-      <div className={`dbar ${compact ? "compact" : ""}`} role="img" aria-label={`${bytes(v.used)} used of ${(v.size / 1e9).toFixed(0)} GB`}>
-        <i className="fill" style={{ width: pct }} title={`${bytes(v.used)} used`} />
+      <div
+        className={`dbar ${compact ? "compact" : ""}`}
+        role="img"
+        aria-label={`${bytes(v.used)} used of ${(v.size / 1e9).toFixed(0)} GB`}
+      >
+        <i
+          className="fill"
+          style={{ width: pct }}
+          title={`${bytes(v.used)} used`}
+        />
       </div>
       {!compact && (
         <div className="scale">
@@ -169,7 +210,14 @@ const Fact = ({ k, v, cls }: { k: string; v: string; cls?: string }) => (
 
 // ---------- every day of the bundle ----------
 
-type Slot = { day: string; gw: number | null; content: number; tunnel: number; direct: number; future: boolean };
+type Slot = {
+  day: string;
+  gw: number | null;
+  content: number;
+  tunnel: number;
+  direct: number;
+  future: boolean;
+};
 
 /** The next calendar day of a "YYYY-MM-DD" key (time-zone free). */
 const nextKey = (k: string) => {
@@ -178,26 +226,53 @@ const nextKey = (k: string) => {
   return d.toISOString().slice(0, 10);
 };
 
-function Days({ v, usage, now }: { v: BundleView | null; usage: UsageDay[]; now: number }) {
-  const [view, setView] = useState<"day" | "total" | "table">(() => (matchMedia("(max-width: 600px)").matches ? "table" : "day")); // chart text is unreadable on a phone
+function Days({
+  v,
+  usage,
+  now,
+}: {
+  v: BundleView | null;
+  usage: UsageDay[];
+  now: number;
+}) {
+  const [view, setView] = useState<"day" | "total" | "table">(() =>
+    matchMedia("(max-width: 600px)").matches ? "table" : "day",
+  ); // chart text is unreadable on a phone
   const today = dayKey(now);
   const byDay = new Map(usage.map((u) => [u.day, u]));
   // The bundle's days when we know them; otherwise the last 30.
   const cycleStart = v?.cycleStart ?? null;
   const cycleEnd = v?.cycleEnd ?? null;
-  const start = cycleStart && now - Date.parse(cycleStart) < 31 * DAY ? Date.parse(cycleStart) : now - 29 * DAY;
+  const start =
+    cycleStart && now - Date.parse(cycleStart) < 31 * DAY
+      ? Date.parse(cycleStart)
+      : now - 29 * DAY;
   const cycle = !!cycleStart && start === Date.parse(cycleStart);
   const end = cycle && cycleEnd ? Date.parse(cycleEnd) : now;
-  const lastKey = dayKey(cycle && cycleEnd ? Math.min(end, start + 31 * DAY) - 1 : now); // a cycle ending at midnight doesn't own that day
+  const lastKey = dayKey(
+    cycle && cycleEnd ? Math.min(end, start + 31 * DAY) - 1 : now,
+  ); // a cycle ending at midnight doesn't own that day
   const slots: Slot[] = [];
-  for (let k = dayKey(start); k <= lastKey && slots.length < 32; k = nextKey(k)) {
+  for (
+    let k = dayKey(start);
+    k <= lastKey && slots.length < 32;
+    k = nextKey(k)
+  ) {
     const u = byDay.get(k);
     const future = k > today;
-    slots.push({ day: k, gw: future ? null : u ? u.billed || u.tunnel + u.direct : 0, content: u ? u.tunnel + u.direct : 0, tunnel: u?.tunnel ?? 0, direct: u?.direct ?? 0, future });
+    slots.push({
+      day: k,
+      gw: future ? null : u ? u.billed || u.tunnel + u.direct : 0,
+      content: u ? u.tunnel + u.direct : 0,
+      tunnel: u?.tunnel ?? 0,
+      direct: u?.direct ?? 0,
+      future,
+    });
   }
   const label = (k: string) => `${+k.slice(8)} ${MON[+k.slice(5, 7) - 1]}`;
   const name = (k: string) => (k === today ? "Today" : label(k));
-  const gbFmt = (x: number) => `${+(x / 1e9).toFixed(x >= 10e9 || x === 0 ? 0 : 1)} GB`;
+  const gbFmt = (x: number) =>
+    `${+(x / 1e9).toFixed(x >= 10e9 || x === 0 ? 0 : 1)} GB`;
   const every = slots.length > 20 ? 3 : slots.length > 10 ? 2 : 1;
   const tIdx = slots.findIndex((s) => s.day === today);
 
@@ -208,12 +283,15 @@ function Days({ v, usage, now }: { v: BundleView | null; usage: UsageDay[]; now:
   const used = cum.map((c) => (c == null ? null : Math.max(0, c + off)));
   const size = v?.size ?? 0;
   const n = slots.length;
-  const even = slots.map((_, i) => (cycle && size ? (size * (i + 1)) / n : null));
+  const even = slots.map((_, i) =>
+    cycle && size ? (size * (i + 1)) / n : null,
+  );
   const pace = v?.pace ?? null;
   // At this pace: from today until it reaches the bundle's size (there it runs out).
   let full = false;
   const proj = slots.map((_, i) => {
-    if (full || tIdx < 0 || i < tIdx || !pace || used[tIdx] == null) return null;
+    if (full || tIdx < 0 || i < tIdx || !pace || used[tIdx] == null)
+      return null;
     const x = used[tIdx]! + pace * (i - tIdx);
     if (size && x >= size) {
       full = true;
@@ -221,16 +299,35 @@ function Days({ v, usage, now }: { v: BundleView | null; usage: UsageDay[]; now:
     }
     return x;
   });
-  const runsOutAt = v?.runsOut != null && slots.length ? (v.runsOut - Date.parse(`${slots[0].day}T00:00:00Z`)) / DAY - 0.5 : null;
+  const runsOutAt =
+    v?.runsOut != null && slots.length
+      ? (v.runsOut - Date.parse(`${slots[0].day}T00:00:00Z`)) / DAY - 0.5
+      : null;
 
   return (
     <div style={{ marginTop: 20 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <b style={{ fontSize: 12.5 }}>{cycle ? "This bundle, day by day" : "Last 30 days"}</b>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+        }}
+      >
+        <b style={{ fontSize: 12.5 }}>
+          {cycle ? "This bundle, day by day" : "Last 30 days"}
+        </b>
         <span className="t3 hide-m" style={{ fontSize: 12 }}>
-          {view === "total" ? "Used so far against an even pace to the end of the bundle." : "What the gateway counted on the wire, whole packets."}
+          {view === "total"
+            ? "Used so far against an even pace to the end of the bundle."
+            : "What the gateway counted on the wire, whole packets."}
         </span>
-        <div className="seg sm" role="group" aria-label="Show" style={{ marginLeft: "auto" }}>
+        <div
+          className="seg sm"
+          role="group"
+          aria-label="Show"
+          style={{ marginLeft: "auto" }}
+        >
           {(
             [
               ["day", "Per day"],
@@ -238,7 +335,14 @@ function Days({ v, usage, now }: { v: BundleView | null; usage: UsageDay[]; now:
               ["table", "Table"],
             ] as const
           ).map(([k, l]) => (
-            <button key={k} type="button" aria-pressed={view === k} className={view === k ? "on" : ""} onClick={() => setView(k)} disabled={k === "total" && !cycle}>
+            <button
+              key={k}
+              type="button"
+              aria-pressed={view === k}
+              className={view === k ? "on" : ""}
+              onClick={() => setView(k)}
+              disabled={k === "total" && !cycle}
+            >
               {l}
             </button>
           ))}
@@ -275,7 +379,8 @@ function Days({ v, usage, now }: { v: BundleView | null; usage: UsageDay[]; now:
             </tbody>
           </table>
           <div className="note" style={{ marginTop: 4 }}>
-            Used is whole packets on the wire. Content, VPN and Direct are what devices sent and received, without the packet overhead.
+            Used is whole packets on the wire. Content, VPN and Direct are what
+            devices sent and received, without the packet overhead.
           </div>
         </div>
       ) : view === "total" ? (
@@ -284,23 +389,77 @@ function Days({ v, usage, now }: { v: BundleView | null; usage: UsageDay[]; now:
             h={220}
             label="Bundle used so far, against an even pace and the bundle size"
             labels={slots.map((s) => label(s.day))}
-            ticks={slots.map((_, i) => i).filter((i) => i % (every * 2) === 0 || i === n - 1)}
-            tipTitle={(i) => name(slots[i].day) + (slots[i].future ? " · ahead" : "")}
-            yMax={Math.ceil((Math.max(size, ...proj.map((x) => x ?? 0), ...used.map((x) => x ?? 0)) * 1.05) / 4 / 5e9) * 4 * 5e9 /* quarter steps of whole 5 GB */}
+            ticks={slots
+              .map((_, i) => i)
+              .filter((i) => i % (every * 2) === 0 || i === n - 1)}
+            tipTitle={(i) =>
+              name(slots[i].day) + (slots[i].future ? " · ahead" : "")
+            }
+            yMax={
+              Math.ceil(
+                (Math.max(
+                  size,
+                  ...proj.map((x) => x ?? 0),
+                  ...used.map((x) => x ?? 0),
+                ) *
+                  1.05) /
+                  4 /
+                  5e9,
+              ) *
+              4 *
+              5e9 /* quarter steps of whole 5 GB */
+            }
             yFmt={gbFmt}
             tipFmt={(x) => bytes(x)}
             series={[
-              { name: "Used", values: used, color: "var(--accent)", fill: true },
-              { name: "At this pace", values: proj, color: "var(--accent)", dash: true },
-              { name: "Even pace", values: even, color: "var(--series-direct)", thin: true },
-              { name: `Bundle ${gbFmt(size)}`, values: slots.map(() => size || null), color: "var(--warn)", thin: true },
+              {
+                name: "Used",
+                values: used,
+                color: "var(--accent)",
+                fill: true,
+              },
+              {
+                name: "At this pace",
+                values: proj,
+                color: "var(--accent)",
+                dash: true,
+              },
+              {
+                name: "Even pace",
+                values: even,
+                color: "var(--series-direct)",
+                thin: true,
+              },
+              {
+                name: `Bundle ${gbFmt(size)}`,
+                values: slots.map(() => size || null),
+                color: "var(--warn)",
+                thin: true,
+              },
             ]}
             markers={[
               ...(tIdx >= 0 ? [{ at: tIdx, label: "Today" }] : []),
-              ...(runsOutAt != null && runsOutAt >= 0 && runsOutAt <= n - 1 ? [{ at: runsOutAt, label: `Runs out ~${dmy(v!.runsOut!)}`, tone: "warn" as const }] : []),
+              ...(runsOutAt != null && runsOutAt >= 0 && runsOutAt <= n - 1
+                ? [
+                    {
+                      at: runsOutAt,
+                      label: `Runs out ~${dmy(v!.runsOut!)}`,
+                      tone: "warn" as const,
+                    },
+                  ]
+                : []),
             ]}
           />
-          <div className="legend" style={{ display: "flex", gap: 14, fontSize: 11.5, marginTop: 4, flexWrap: "wrap" }}>
+          <div
+            className="legend"
+            style={{
+              display: "flex",
+              gap: 14,
+              fontSize: 11.5,
+              marginTop: 4,
+              flexWrap: "wrap",
+            }}
+          >
             <span>
               <i className="lk" style={{ borderColor: "var(--accent)" }} />
               Used
@@ -310,7 +469,10 @@ function Days({ v, usage, now }: { v: BundleView | null; usage: UsageDay[]; now:
               At this pace
             </span>
             <span>
-              <i className="lk thin" style={{ borderColor: "var(--series-direct)" }} />
+              <i
+                className="lk thin"
+                style={{ borderColor: "var(--series-direct)" }}
+              />
               Even pace
             </span>
             <span>
@@ -325,12 +487,20 @@ function Days({ v, usage, now }: { v: BundleView | null; usage: UsageDay[]; now:
             h={190}
             label="Data per day: what the gateway counted on the wire"
             yFmt={gbFmt}
-            xLabel={(i) => (slots[i].day === today ? "today" : i % every === 0 && Math.abs(i - tIdx) > 1 ? label(slots[i].day) : null)}
+            xLabel={(i) =>
+              slots[i].day === today
+                ? "today"
+                : i % every === 0 && Math.abs(i - tIdx) > 1
+                  ? label(slots[i].day)
+                  : null
+            }
             cols={slots.map((s) => ({
               key: s.day,
               value: s.gw,
               accent: s.day === today,
-              tip: s.future ? label(s.day) : `${name(s.day)}${s.day === today ? " · so far" : ""}`,
+              tip: s.future
+                ? label(s.day)
+                : `${name(s.day)}${s.day === today ? " · so far" : ""}`,
               rows: s.future
                 ? [{ label: "", value: "not yet", muted: true }]
                 : [
@@ -393,29 +563,52 @@ function Entries({
 }) {
   const [confirm, setConfirm] = useState<number | null>(null);
   const a = useAct((s) => {
-    if (s && typeof s === "object" && "events" in (s as object)) onChange(s as BundleState);
+    if (s && typeof s === "object" && "events" in (s as object))
+      onChange(s as BundleState);
   });
   const evs = st?.events ?? [];
   return (
-    <details className="entries" ref={detailsRef} open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+    <details
+      className="entries"
+      ref={detailsRef}
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+    >
       <summary>
         Renewals and corrections <span className="t3">· {evs.length}</span>
       </summary>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "10px 0" }}>
-        <button type="button" className="btn sm" aria-pressed={form === "renew"} onClick={() => setForm(form === "renew" ? null : "renew")}>
+      <div
+        style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "10px 0" }}
+      >
+        <button
+          type="button"
+          className="btn sm"
+          aria-pressed={form === "renew"}
+          onClick={() => setForm(form === "renew" ? null : "renew")}
+        >
           I renewed
         </button>
         {hasBundle && (
-          <button type="button" className="btn sm" aria-pressed={form === "check"} onClick={() => setForm(form === "check" ? null : "check")}>
+          <button
+            type="button"
+            className="btn sm"
+            aria-pressed={form === "check"}
+            onClick={() => setForm(form === "check" ? null : "check")}
+          >
             Set what's left…
           </button>
         )}
         <span className="note" style={{ alignSelf: "center" }}>
-          Log each renewal, and set what's left whenever you check your ISP's app: Junction counts down from it.
+          Log each renewal, and set what's left whenever you check your ISP's
+          app: Junction counts down from it.
         </span>
       </div>
-      {form === "renew" && <RenewForm onDone={(s) => (onChange(s), setForm(null))} />}
-      {form === "check" && <CheckForm onDone={(s) => (onChange(s), setForm(null))} />}
+      {form === "renew" && (
+        <RenewForm onDone={(s) => (onChange(s), setForm(null))} />
+      )}
+      {form === "check" && (
+        <CheckForm onDone={(s) => (onChange(s), setForm(null))} />
+      )}
       <div className="scroll-x">
         <table className="tb compact" style={{ maxWidth: 820 }}>
           <thead>
@@ -434,20 +627,44 @@ function Entries({
                   {dmy(e.at)} {hm(e.at)}
                 </td>
                 <td>{e.kind === "renewal" ? "Renewed" : "Set left"}</td>
-                <td className="rt">{(e.amount / 1e9).toFixed(e.amount % 1e9 ? 1 : 0)} GB</td>
+                <td className="rt">
+                  {(e.amount / 1e9).toFixed(e.amount % 1e9 ? 1 : 0)} GB
+                </td>
                 <td className="t3">{e.expiresAt ? dmy(e.expiresAt) : "—"}</td>
                 <td className="rt">
                   {confirm === e.id ? (
                     <span style={{ display: "inline-flex", gap: 6 }}>
-                      <button type="button" className="btn sm danger" disabled={a.busy} onClick={() => a.run(() => api.deleteBundleEvent(e.id), "Entry deleted.", "Couldn't delete it.").then(() => setConfirm(null))}>
+                      <button
+                        type="button"
+                        className="btn sm danger"
+                        disabled={a.busy}
+                        onClick={() =>
+                          a
+                            .run(
+                              () => api.deleteBundleEvent(e.id),
+                              "Entry deleted.",
+                              "Couldn't delete it.",
+                            )
+                            .then(() => setConfirm(null))
+                        }
+                      >
                         Delete
                       </button>
-                      <button type="button" className="btn sm ghost" onClick={() => setConfirm(null)}>
+                      <button
+                        type="button"
+                        className="btn sm ghost"
+                        onClick={() => setConfirm(null)}
+                      >
                         Keep
                       </button>
                     </span>
                   ) : (
-                    <button type="button" className="btn sm ghost" aria-label={`Undo ${e.kind === "renewal" ? "renewal" : "left set"} of ${dmy(e.at)} ${hm(e.at)}`} onClick={() => setConfirm(e.id)}>
+                    <button
+                      type="button"
+                      className="btn sm ghost"
+                      aria-label={`Undo ${e.kind === "renewal" ? "renewal" : "left set"} of ${dmy(e.at)} ${hm(e.at)}`}
+                      onClick={() => setConfirm(e.id)}
+                    >
                       Undo
                     </button>
                   )}
@@ -483,29 +700,73 @@ function RenewForm({ onDone }: { onDone: (s: BundleState) => void }) {
       onSubmit={async (ev) => {
         ev.preventDefault();
         const g = Number(gbv.replace(",", "."));
-        if (!(g > 0)) return a.setMsg({ ok: false, t: "Enter the bundle size in GB." });
+        if (!(g > 0))
+          return a.setMsg({ ok: false, t: "Enter the bundle size in GB." });
         const atIso = TIME_OK.test(at) ? fromLocalInput(at) : null;
-        if (!atIso) return a.setMsg({ ok: false, t: "That date and time doesn't look right." });
-        if (Date.parse(atIso) > Date.now() + 5 * 60000) return a.setMsg({ ok: false, t: "The renewal can't be in the future." });
+        if (!atIso)
+          return a.setMsg({
+            ok: false,
+            t: "That date and time doesn't look right.",
+          });
+        if (Date.parse(atIso) > Date.now() + 5 * 60000)
+          return a.setMsg({
+            ok: false,
+            t: "The renewal can't be in the future.",
+          });
         const expIso = exp ? fromLocalInput(exp, "23:59:59") : null;
         let res: BundleState | null = null;
-        await a.run(async () => (res = await api.renew({ gb: g, at: atIso, expiresAt: expIso })), `Logged a ${g} GB renewal.`, "Couldn't log the renewal.");
+        await a.run(
+          async () =>
+            (res = await api.renew({ gb: g, at: atIso, expiresAt: expIso })),
+          `Logged a ${g} GB renewal.`,
+          "Couldn't log the renewal.",
+        );
         if (res) onDone(res);
       }}
     >
       <b>I renewed</b>
-      <label className="t2" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      <label
+        className="t2"
+        style={{ display: "flex", gap: 6, alignItems: "center" }}
+      >
         Size
-        <input className="inp num" style={{ width: 70 }} inputMode="decimal" aria-label="Size (GB)" placeholder="250" value={gbv} onChange={(e) => setGb(e.target.value)} required />
+        <input
+          className="inp num"
+          style={{ width: 70 }}
+          inputMode="decimal"
+          aria-label="Size (GB)"
+          placeholder="250"
+          value={gbv}
+          onChange={(e) => setGb(e.target.value)}
+          required
+        />
         GB
       </label>
-      <label className="t2" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      <label
+        className="t2"
+        style={{ display: "flex", gap: 6, alignItems: "center" }}
+      >
         on
-        <input className="inp num" type="datetime-local" aria-label="Renewed at (gateway time)" value={at} onChange={(e) => setAt(e.target.value)} />
+        <input
+          className="inp num"
+          type="datetime-local"
+          aria-label="Renewed at (gateway time)"
+          value={at}
+          onChange={(e) => setAt(e.target.value)}
+        />
       </label>
-      <label className="t2" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      <label
+        className="t2"
+        style={{ display: "flex", gap: 6, alignItems: "center" }}
+      >
         ends
-        <input className="inp num" type="date" aria-label="Ends (optional)" value={exp} onChange={(e) => setExp(e.target.value)} />
+        <input
+          className="inp num"
+          type="date"
+          aria-label="Ends (optional)"
+          value={exp}
+          onChange={(e) => setExp(e.target.value)}
+        />
       </label>
       <button type="submit" className="btn pri sm" disabled={a.busy}>
         {a.busy ? "Saving…" : "Log renewal"}
@@ -525,14 +786,28 @@ function CheckForm({ onDone }: { onDone: (s: BundleState) => void }) {
       onSubmit={async (ev) => {
         ev.preventDefault();
         const g = Number(val.replace(",", "."));
-        if (!(g >= 0) || val.trim() === "") return a.setMsg({ ok: false, t: "Enter how much is left, in GB." });
+        if (!(g >= 0) || val.trim() === "")
+          return a.setMsg({ ok: false, t: "Enter how much is left, in GB." });
         let res: BundleState | null = null;
-        await a.run(async () => (res = await api.check({ gbLeft: g })), "Logged.", "Couldn't log it.");
+        await a.run(
+          async () => (res = await api.check({ gbLeft: g })),
+          "Logged.",
+          "Couldn't log it.",
+        );
         if (res) onDone(res);
       }}
     >
       <b>Left right now</b>
-      <input className="inp num" style={{ width: 80 }} inputMode="decimal" aria-label="GB left right now" placeholder="96.5" value={val} onChange={(e) => setVal(e.target.value)} required />
+      <input
+        className="inp num"
+        style={{ width: 80 }}
+        inputMode="decimal"
+        aria-label="GB left right now"
+        placeholder="96.5"
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        required
+      />
       <span className="t2">GB · Junction counts down from this</span>
       <button type="submit" className="btn pri sm" disabled={a.busy}>
         {a.busy ? "Saving…" : "Log it"}

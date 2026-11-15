@@ -76,6 +76,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: Next) {
   try {
     if (path === "/api/overview" && method === "GET") return json(res, 200, fx.overview());
     if (path === "/api/stream" && method === "GET") return stream(req, res);
+    if (path === "/api/devices/daily" && method === "GET") return json(res, 200, fx.devicesDaily(url.searchParams));
     if (path === "/api/devices" && method === "GET") return json(res, 200, fx.deviceList());
     if (path === "/api/exits" && method === "GET") {
       const o = fx.overview();
@@ -148,7 +149,9 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: Next) {
     if (path === "/api/session" && method === "GET") return json(res, 200, { required: url.searchParams.has("locked"), signedIn: false });
     if (path === "/api/login" && method === "POST") return json(res, 200, { required: true, signedIn: true });
     if (path === "/api/logout" && method === "POST") return json(res, 200, { required: true, signedIn: false });
-    if (path === "/api/traffic" && method === "GET") return json(res, 200, fx.traffic(url.searchParams));
+    if (path === "/api/traffic" && method === "GET") return json(res, 200, url.searchParams.get("device") ? fx.deviceTraffic(url.searchParams.get("device")!, url.searchParams) : fx.traffic(url.searchParams));
+    if (path === "/api/categories" && method === "GET") return json(res, 200, fx.categories(url.searchParams));
+    if (path === "/api/devices/daily" && method === "GET") return json(res, 200, fx.devicesDaily(url.searchParams));
     if (path === "/api/exits/history" && method === "GET") return json(res, 200, fx.exitHistory(url.searchParams));
     if (path === "/api/simulate" && method === "GET") return send(fx.simulate(url.searchParams));
     if (path === "/api/rules" && method === "GET") return json(res, 200, fx.listRules());

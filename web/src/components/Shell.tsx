@@ -1,25 +1,175 @@
-import { CountUp } from "../charts";
-import { useEffect, useRef, type ReactNode } from "react";
+import { CountUp, LineChart } from "../charts";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Overview } from "../api/types";
 import { gatewayIP, gatewayShort, selectedEndpoint } from "../clients";
-import { dmy, hm, rate } from "../fmt";
-import { useLive } from "../live";
+import { dmy, hm, hms, rate } from "../fmt";
+import { liveHistory, useLive } from "../live";
 import { Link, navigate, useLocation } from "../router";
 import { Icon } from "../ui";
 import { useBrand, useTheme } from "../prefs";
 import { BrandMark } from "./Brand";
 
-export type Page = "dashboard" | "topology" | "clients" | "rules" | "activity" | "internet" | "health" | "settings" | "none";
+export type Page =
+  | "dashboard"
+  | "topology"
+  | "clients"
+  | "rules"
+  | "activity"
+  | "internet"
+  | "health"
+  | "settings"
+  | "none";
 
-const NAV: { page: Page; href: string; label: string; short: string; icon: string }[] = [
-  { page: "dashboard", href: "/", label: "Dashboard", short: "Home", icon: "dashboard" },
-  { page: "topology", href: "/topology", label: "Topology", short: "Topology", icon: "topology" },
-  { page: "clients", href: "/clients", label: "Clients", short: "Clients", icon: "clients" },
-  { page: "rules", href: "/rules", label: "Rules", short: "Rules", icon: "rules" },
-  { page: "activity", href: "/activity", label: "Activity", short: "Activity", icon: "activity" },
-  { page: "internet", href: "/internet", label: "Internet", short: "Internet", icon: "internet" },
-  { page: "health", href: "/health", label: "Health", short: "Health", icon: "health" },
+const NAV: {
+  page: Page;
+  href: string;
+  label: string;
+  short: string;
+  icon: string;
+}[] = [
+  {
+    page: "dashboard",
+    href: "/",
+    label: "Dashboard",
+    short: "Home",
+    icon: "dashboard",
+  },
+  {
+    page: "topology",
+    href: "/topology",
+    label: "Topology",
+    short: "Topology",
+    icon: "topology",
+  },
+  {
+    page: "clients",
+    href: "/clients",
+    label: "Clients",
+    short: "Clients",
+    icon: "clients",
+  },
+  {
+    page: "rules",
+    href: "/rules",
+    label: "Rules",
+    short: "Rules",
+    icon: "rules",
+  },
+  {
+    page: "activity",
+    href: "/activity",
+    label: "Activity",
+    short: "Activity",
+    icon: "activity",
+  },
+  {
+    page: "internet",
+    href: "/internet",
+    label: "Internet",
+    short: "Internet",
+    icon: "internet",
+  },
+  {
+    page: "health",
+    href: "/health",
+    label: "Health",
+    short: "Health",
+    icon: "health",
+  },
 ];
+
+/** The live rates in the top bar; hover (or focus) shows the last 5 minutes. */
+function LiveRates({ o }: { o: Overview }) {
+  const [open, setOpen] = useState(false);
+  const hist = liveHistory();
+  const mb = (v: number) => (v * 8) / 1e6;
+  const stat = (k: "down" | "up") => {
+    const v = hist.map((s) => s[k]);
+    return v.length
+      ? { peak: Math.max(...v), avg: v.reduce((a, b) => a + b, 0) / v.length }
+      : null;
+  };
+  const d = stat("down");
+  const u = stat("up");
+  return (
+    <span
+      className="livewrap hide-m num"
+      tabIndex={0}
+      onPointerEnter={() => setOpen(true)}
+      onPointerLeave={() => setOpen(false)}
+      onFocus={() => setOpen(true)}
+      onBlur={() => setOpen(false)}
+      aria-label={`Download ${rate(o.live.down)}, upload ${rate(o.live.up)}`}
+    >
+      ↓ <CountUp value={o.live.down} fmt={rate} ms={1200} /> &nbsp;↑{" "}
+      <CountUp value={o.live.up} fmt={rate} ms={1200} />
+      {open && (
+        <span
+          className="livepop"
+          role="dialog"
+          aria-label="Live rates, last 5 minutes"
+        >
+          <span className="lp-h">
+            <span>
+              Whole network, last{" "}
+              {Math.max(
+                1,
+                Math.round(
+                  ((hist.length ? hist[hist.length - 1].t - hist[0].t : 0) /
+                    60e3) *
+                    10,
+                ) / 10,
+              )}{" "}
+              min
+            </span>
+            <span>every 2 s</span>
+          </span>
+          {hist.length > 2 ? (
+            <LineChart
+              h={130}
+              padL={52}
+              padR={6}
+              label="Live download and upload over the last minutes"
+              labels={hist.map((s) => hms(s.t))}
+              ticks={[0, hist.length - 1]}
+              series={[
+                {
+                  name: "Download",
+                  values: hist.map((s) => mb(s.down)),
+                  color: "var(--series-down)",
+                  fill: true,
+                },
+                {
+                  name: "Upload",
+                  values: hist.map((s) => mb(s.up)),
+                  color: "var(--series-up)",
+                },
+              ]}
+              yFmt={(v) => `${v >= 10 ? v.toFixed(0) : v.toFixed(1)} Mbit/s`}
+            />
+          ) : (
+            <span
+              className="note"
+              style={{ display: "block", padding: "20px 0" }}
+            >
+              Collecting: the chart fills in while this page is open.
+            </span>
+          )}
+          <span className="lp-f">
+            <span>
+              ↓ peak <b>{d ? rate(d.peak) : "—"}</b> · avg{" "}
+              <b>{d ? rate(d.avg) : "—"}</b>
+            </span>
+            <span>
+              ↑ peak <b>{u ? rate(u.peak) : "—"}</b> · avg{" "}
+              <b>{u ? rate(u.avg) : "—"}</b>
+            </span>
+          </span>
+        </span>
+      )}
+    </span>
+  );
+}
 
 export function Shell({ page, children }: { page: Page; children: ReactNode }) {
   const { overview } = useLive();
@@ -27,22 +177,47 @@ export function Shell({ page, children }: { page: Page; children: ReactNode }) {
   return (
     <>
       <aside className="rail" aria-label="Main">
-        <Link href="/" className="mark" title={brand.name} aria-label={`${brand.name}: dashboard`}>
+        <Link
+          href="/"
+          className="mark"
+          title={brand.name}
+          aria-label={`${brand.name}: dashboard`}
+        >
           <BrandMark b={brand} size={26} />
         </Link>
         <nav aria-label="Pages">
           {NAV.map((n) => (
-            <Link key={n.page} href={n.href} className={(page === n.page ? "ri on" : "ri") + (n.page === "health" ? " hide-m" : "")} aria-current={page === n.page ? "page" : undefined} aria-label={n.label}>
+            <Link
+              key={n.page}
+              href={n.href}
+              className={
+                (page === n.page ? "ri on" : "ri") +
+                (n.page === "health" ? " hide-m" : "")
+              }
+              aria-current={page === n.page ? "page" : undefined}
+              aria-label={n.label}
+            >
               <Icon n={n.icon} s={18} />
-              <span className="tip" aria-hidden="true">{n.label}</span>
-              <span className="lbl" aria-hidden="true">{n.short}</span>
+              <span className="tip" aria-hidden="true">
+                {n.label}
+              </span>
+              <span className="lbl" aria-hidden="true">
+                {n.short}
+              </span>
             </Link>
           ))}
         </nav>
         <div className="foot">
-          <Link href="/settings" className={page === "settings" ? "ri on" : "ri"} aria-current={page === "settings" ? "page" : undefined} aria-label="Settings">
+          <Link
+            href="/settings"
+            className={page === "settings" ? "ri on" : "ri"}
+            aria-current={page === "settings" ? "page" : undefined}
+            aria-label="Settings"
+          >
             <Icon n="settings" s={18} />
-            <span className="tip" aria-hidden="true">Settings</span>
+            <span className="tip" aria-hidden="true">
+              Settings
+            </span>
           </Link>
         </div>
       </aside>
@@ -60,7 +235,7 @@ function TopBar({ o }: { o: Overview | null }) {
   const [, theme, setTheme] = useTheme();
   const { path, query } = useLocation();
   const input = useRef<HTMLInputElement>(null);
-  const q = path === "/clients" ? query.get("q") ?? "" : "";
+  const q = path === "/clients" ? (query.get("q") ?? "") : "";
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -99,14 +274,26 @@ function TopBar({ o }: { o: Overview | null }) {
           placeholder="Search clients, IPs, MACs"
           value={q}
           onChange={(e) => search(e.target.value)}
-          onKeyDown={(e) => e.key === "Escape" && (search(""), input.current?.blur())}
+          onKeyDown={(e) =>
+            e.key === "Escape" && (search(""), input.current?.blur())
+          }
         />
         <kbd aria-hidden="true">/</kbd>
       </label>
       <div className="live" role="status" aria-live="polite">
-        {sample && <span className="tag warn" title="Mock mode: nothing here comes from the gateway">Sample data</span>}
+        {sample && (
+          <span
+            className="tag warn"
+            title="Mock mode: nothing here comes from the gateway"
+          >
+            Sample data
+          </span>
+        )}
         {status === "down" ? (
-          <span style={{ display: "flex", gap: 7, alignItems: "center" }} className="badc">
+          <span
+            style={{ display: "flex", gap: 7, alignItems: "center" }}
+            className="badc"
+          >
             <span className="dot bad" />
             Can't reach the gateway — retrying
           </span>
@@ -115,34 +302,48 @@ function TopBar({ o }: { o: Overview | null }) {
         ) : (
           <>
             <span style={{ display: "flex", gap: 7, alignItems: "center" }}>
-              <span className={`dot pulse ${gw && gw.role !== "master" ? "warn" : "ok"}`} />
+              <span
+                className={`dot pulse ${gw && gw.role !== "master" ? "warn" : "ok"}`}
+              />
               Gateway {gatewayShort()} {role}
               <span className="hide-m" style={{ display: "contents" }}>
                 <span className="t3">·</span>via {ep ? ep.name : "Direct"}
               </span>
             </span>
             <span className="sep hide-m" />
-            <span className="hide-m num">
-              ↓ <CountUp value={o.live.down} fmt={rate} ms={1200} /> &nbsp;↑ <CountUp value={o.live.up} fmt={rate} ms={1200} />
-            </span>
+            <LiveRates o={o} />
             <span className="sep hide-m" />
             <span className="t3 hide-m">
               {dmy(o.now)} {hm(o.now)}
             </span>
           </>
         )}
-        <Link href="/health" className="btn icon ghost show-m" aria-label="Health" title="Health">
+        <Link
+          href="/health"
+          className="btn icon ghost show-m"
+          aria-label="Health"
+          title="Health"
+        >
           <Icon n="health" s={15} />
         </Link>
-        <Link href="/settings" className="btn icon ghost show-m" aria-label="Settings" title="Settings">
+        <Link
+          href="/settings"
+          className="btn icon ghost show-m"
+          aria-label="Settings"
+          title="Settings"
+        >
           <Icon n="settings" s={15} />
         </Link>
         <button
           type="button"
           className="btn icon ghost themebtn"
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          aria-label={
+            theme === "dark" ? "Switch to light mode" : "Switch to dark mode"
+          }
+          title={
+            theme === "dark" ? "Switch to light mode" : "Switch to dark mode"
+          }
         >
           <Icon n={theme === "dark" ? "moon" : "sun"} s={15} />
         </button>
@@ -174,8 +375,13 @@ export function Unreachable({ error }: { error: string | null }) {
       </div>
       <div className="pn">
         <div className="bd">
-          <p style={{ margin: 0 }}>Junction tries again every few seconds. Check that the gateway at {gatewayIP()} is up and that you're on the home network.</p>
-          {error && error !== "Can't reach the gateway." && <p className="note">{error}</p>}
+          <p style={{ margin: 0 }}>
+            Junction tries again every few seconds. Check that the gateway at{" "}
+            {gatewayIP()} is up and that you're on the home network.
+          </p>
+          {error && error !== "Can't reach the gateway." && (
+            <p className="note">{error}</p>
+          )}
         </div>
       </div>
     </div>
@@ -183,9 +389,14 @@ export function Unreachable({ error }: { error: string | null }) {
 }
 
 /** Loading / unreachable until the first overview arrives; afterwards a slim banner while it's down. */
-export function NeedOverview({ children }: { children: (o: Overview) => ReactNode }) {
+export function NeedOverview({
+  children,
+}: {
+  children: (o: Overview) => ReactNode;
+}) {
   const { overview, status, error } = useLive();
-  if (!overview) return status === "down" ? <Unreachable error={error} /> : <Loading />;
+  if (!overview)
+    return status === "down" ? <Unreachable error={error} /> : <Loading />;
   return (
     <>
       {status === "down" && (
@@ -193,7 +404,10 @@ export function NeedOverview({ children }: { children: (o: Overview) => ReactNod
           <div className="line-alert" role="alert" style={{ marginTop: 0 }}>
             <span className="dot bad" />
             <span>
-              <b>Can't reach the gateway — retrying.</b> <span className="t2">Showing what it reported at {hm(overview.now)}.</span>
+              <b>Can't reach the gateway — retrying.</b>{" "}
+              <span className="t2">
+                Showing what it reported at {hm(overview.now)}.
+              </span>
             </span>
           </div>
         </div>

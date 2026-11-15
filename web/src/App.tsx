@@ -1,3 +1,4 @@
+import { Enhance } from "./components/Enhance";
 import { useEffect, type ReactNode } from "react";
 import { Shell, type Page } from "./components/Shell";
 import type { Tab } from "./components/ClientPanel";
@@ -38,6 +39,7 @@ export function App() {
   return (
     <LiveProvider>
       <Routes />
+      <Enhance />
     </LiveProvider>
   );
 }
