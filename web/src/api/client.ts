@@ -1,4 +1,4 @@
-import type { Health, Session, Settings, SettingsPatch, SetupBody, SetupInfo } from "./types";
+import type { ExitDraft, ExitTest, Health, Session, Settings, SettingsPatch, SettingsSaved, SetupBody, SetupInfo } from "./types";
 import type {
   BundleState,
   CheckBody,
@@ -135,7 +135,11 @@ export const STREAM_URL = "/api/stream";
 // ---- v1.6: settings, health, setup, login ----
 export const api2 = {
   settings: () => request<Settings>("GET", "/api/settings"),
-  saveSettings: (p: SettingsPatch) => request<Settings>("PUT", "/api/settings", p),
+  saveSettings: (p: SettingsPatch) => request<SettingsSaved>("PUT", "/api/settings", p),
+  testExit: (d: ExitDraft) => request<ExitTest>("POST", "/api/settings/exits/test", d, 30000),
+  addExit: (d: ExitDraft) => request<SettingsSaved>("POST", "/api/settings/exits", d, 60000),
+  removeExit: (key: string) => request<SettingsSaved>("DELETE", `/api/settings/exits/${encodeURIComponent(key)}`),
+  backupURL: "/api/backup",
   setPassword: (password: string) => request<Settings>("POST", "/api/settings/password", { password }),
   health: () => request<Health>("GET", "/api/health"),
   installUpdate: (version: string) => request<Health>("POST", "/api/update", { version }, 120000),

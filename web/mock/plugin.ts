@@ -125,6 +125,21 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: Next) {
       }
       return json(res, 200, settings);
     }
+    if (path === "/api/settings/exits/test" && method === "POST") {
+      const d = (await readBody(req)) as { text?: string };
+      const ok = /Endpoint|"server"/.test(d?.text ?? "");
+      return json(res, 200, ok ? { ok: true, message: "", latencyMs: 38, server: "vpn2.example.net:51820" } : { ok: false, message: "That isn't a WireGuard config or a sing-box outbound: no server found.", latencyMs: null, server: null });
+    }
+    if (path === "/api/settings/exits" && method === "POST") {
+      const d = (await readBody(req)) as { name: string };
+      settings.vpn.exits.push({ key: d.name.toLowerCase().replace(/[^a-z0-9]+/g, "-"), name: d.name, kind: "wireguard", server: "vpn2.example.net:51820", healthy: true, latencyMs: 38 });
+      return json(res, 200, settings);
+    }
+    if (path.startsWith("/api/settings/exits/") && method === "DELETE") {
+      const k = decodeURIComponent(path.split("/").pop()!);
+      settings.vpn.exits = settings.vpn.exits.filter((e) => e.key !== k);
+      return json(res, 200, settings);
+    }
     if (path === "/api/settings/password" && method === "POST") return (settings.access.passwordSet = true), json(res, 200, settings);
     if (path === "/api/health" && method === "GET") return json(res, 200, mockHealth());
     if (path === "/api/update" && method === "POST") return json(res, 200, mockHealth());
@@ -215,14 +230,58 @@ const settings = {
     gatewayIP: "192.168.50.4",
     lan: "192.168.50.0/24",
     iface: "eth0",
+    ifaces: ["eth0", "wlan0"],
     detectedAt: ago(90),
-    router: { url: "https://192.168.50.1", connected: true, devices: 14, hasLogin: true },
+    learnNamesFromDHCP: false,
+    router: { url: "https://192.168.50.1", user: "admin", passwordSet: true, connected: true, devices: 14 },
     backup: { name: "Backup Pi", ip: "192.168.50.3", state: "standby" },
-    dhcp: { on: true, pool: ".100 – .179", leaseHours: 12, reservations: 9 },
   },
-  vpn: { exits: [{ key: "home", name: "Home VPN", healthy: true }, { key: "travel", name: "Travel VPN", healthy: false }], profiles: ["default", "streaming", "gaming"], defaultProfile: "default" },
+  dhcp: {
+    on: true,
+    poolStart: "192.168.50.100",
+    poolEnd: "192.168.50.179",
+    leaseHours: 12,
+    dns: ["1.1.1.1", "8.8.8.8"],
+    leases: 23,
+    reservations: [
+      { name: "Office PC", mac: "02:4a:00:00:00:01", ip: "192.168.50.12" },
+      { name: "NAS", mac: "02:4a:00:00:00:04", ip: "192.168.50.6" },
+      { name: "Home server", mac: "02:4a:00:00:00:05", ip: "192.168.50.3" },
+      { name: "Printer", mac: "02:4a:00:00:00:06", ip: "192.168.50.10" },
+      { name: "PlayStation 5", mac: "02:4a:00:00:00:0e", ip: "192.168.50.56" },
+    ],
+  },
+  vpn: {
+    exits: [
+      { key: "home", name: "Home VPN", kind: "wireguard", server: "vpn.example.net:51820", healthy: true, latencyMs: 41 },
+      { key: "travel", name: "Travel VPN", kind: "hysteria2", server: "203.0.113.20:443", healthy: false, latencyMs: null },
+    ],
+    profiles: [
+      { name: "default", checkSite: "" },
+      { name: "streaming", checkSite: "www.example-tv.com" },
+      { name: "gaming", checkSite: "www.example-games.com" },
+    ],
+    defaultProfile: "default",
+    failover: { enabled: true, checkURL: "http://cp.cloudflare.com", everySec: 10, timeoutSec: 3, downAfter: 3, upAfter: 6, waitMin: 10 },
+  },
+  bundle: { autoRenew: { sizeGB: 250, day: 13 } as { sizeGB: number; day: number } | null },
   access: { required: false, passwordSet: false, sessionDays: 30 },
-  version: "1.5.0",
+  updates: { check: true, url: "https://api.github.com/repos/XIVIX134/junction/releases/latest", lastCheck: ago(42), available: null as string | null },
+  data: { usageDays: 400, sitesDays: 35, dbBytes: 18_400_000 },
+  advanced: {
+    configPath: "/etc/junction/config.json",
+    listen: ":80",
+    db: "/var/lib/junction/junction.db",
+    singboxConfig: "/etc/sing-box/config.json",
+    clashAPI: "http://127.0.0.1:9090",
+    dnsmasqLeases: "/var/lib/misc/dnsmasq.leases",
+    legacyFailoverFile: null as string | null,
+    startingNames: [
+      { mac: "02:4a:00:00:00:09", name: "Router", group: "Network" },
+      { mac: "02:4a:00:00:00:0b", name: "Mesh point", group: "Network" },
+    ],
+  },
+  version: "0.1.1",
 };
 
 function mockHealth() {

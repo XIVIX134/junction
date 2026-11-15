@@ -70,9 +70,10 @@ export function useSettings() {
     settings: s,
     reload: load,
     async save(p: SettingsPatch) {
-      current = await api2.saveSettings(p);
+      const saved = await api2.saveSettings(p);
+      current = saved;
       emit();
-      return current;
+      return saved;
     },
     set(next: Settings) {
       current = next;
@@ -84,7 +85,7 @@ export function useSettings() {
 /** The gateway's VPN profiles, read from its sing-box config. */
 export function useProfiles(): string[] {
   const { settings } = useSettings();
-  return settings?.vpn.profiles.length ? settings.vpn.profiles : ["default"];
+  return settings?.vpn.profiles.length ? settings.vpn.profiles.map((p) => p.name) : ["default"];
 }
 
 export const DEFAULT_BRAND = { name: "Junction", color: "#4797ff", letter: "J", image: null };

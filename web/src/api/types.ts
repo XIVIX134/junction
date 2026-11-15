@@ -175,6 +175,19 @@ export type DevicePatch = { name?: string; group?: string | null };
 // ---- v1.6: settings, health, setup, login ----
 
 export type Brand = { name: string; color: string; letter: string; image: string | null /* data: URL */ };
+// Settings is the whole gateway configuration (config.json plus what the app
+// stores itself). Saving a value that's only read at start restarts Junction
+// (the response says so); traffic never depends on Junction, so that's safe.
+export type ExitInfo = {
+  key: string;
+  name: string;
+  kind: "wireguard" | "hysteria2" | "vless" | "trojan" | "shadowsocks" | "other";
+  server: string; // host:port, for display
+  healthy: boolean;
+  latencyMs: number | null;
+};
+export type Reservation = { mac: string; ip: string; name: string };
+export type StartingName = { mac: string; name: string; group: string };
 export type Settings = {
   brand: Brand;
   timezone: string;
@@ -183,22 +196,74 @@ export type Settings = {
     gatewayIP: string;
     lan: string;
     iface: string;
+    ifaces: string[]; // network cards on this box
     detectedAt: string | null;
-    router: { url: string; connected: boolean; devices: number; hasLogin: boolean } | null;
+    learnNamesFromDHCP: boolean;
+    router: { url: string; user: string; passwordSet: boolean; connected: boolean; devices: number } | null;
     backup: { name: string; ip: string; state: "standby" | "covering" | "unknown" } | null;
-    dhcp: { on: boolean; pool: string; leaseHours: number; reservations: number } | null;
   };
-  vpn: { exits: { key: string; name: string; healthy: boolean }[]; profiles: string[]; defaultProfile: string };
+  dhcp: {
+    on: boolean; // dnsmasq hands out addresses
+    poolStart: string;
+    poolEnd: string;
+    leaseHours: number;
+    dns: string[];
+    leases: number; // active now
+    reservations: Reservation[];
+  } | null; // null: dnsmasq isn't installed (the setup script adds it)
+  vpn: {
+    exits: ExitInfo[];
+    profiles: { name: string; checkSite: string }[];
+    defaultProfile: string;
+    failover: {
+      enabled: boolean;
+      checkURL: string;
+      everySec: number;
+      timeoutSec: number;
+      downAfter: number; // failed checks in a row
+      upAfter: number; // good checks in a row
+      waitMin: number; // before trusting a recovered exit again
+    };
+  };
+  bundle: { autoRenew: { sizeGB: number; day: number } | null };
   access: { required: boolean; passwordSet: boolean; sessionDays: number /* 0 = until sign-out */ };
+  updates: { check: boolean; url: string; lastCheck: string | null; available: string | null };
+  data: { usageDays: number; sitesDays: number; dbBytes: number };
+  advanced: {
+    configPath: string;
+    listen: string;
+    db: string;
+    singboxConfig: string;
+    clashAPI: string;
+    dnsmasqLeases: string;
+    legacyFailoverFile: string | null; // still read when the failover section is absent
+    startingNames: StartingName[];
+  };
   version: string;
 };
 export type SettingsPatch = {
   brand?: Partial<Brand>;
   timezone?: string;
-  network?: { gatewayIP?: string; lan?: string };
-  vpn?: { defaultProfile?: string };
+  network?: Partial<{ gatewayIP: string; lan: string; iface: string; learnNamesFromDHCP: boolean; backupName: string; backupIP: string }> & {
+    router?: { url: string; user?: string; password?: string } | null;
+  };
+  dhcp?: Partial<{ poolStart: string; poolEnd: string; leaseHours: number; dns: string[]; reservations: Reservation[] }>;
+  vpn?: {
+    defaultProfile?: string;
+    profiles?: { name: string; checkSite: string }[];
+    failover?: Partial<Settings["vpn"]["failover"]>;
+    renameExit?: { key: string; name: string };
+  };
+  bundle?: { autoRenew: { sizeGB: number; day: number } | null };
   access?: { required?: boolean; sessionDays?: number };
+  updates?: { check?: boolean; url?: string };
+  data?: { usageDays?: number; sitesDays?: number };
+  advanced?: Partial<Omit<Settings["advanced"], "configPath" | "legacyFailoverFile">>;
 };
+/** PUT /api/settings answers with the new settings; restarting = Junction restarts to apply them. */
+export type SettingsSaved = Settings & { restarting?: boolean };
+export type ExitDraft = { name: string; kind: "wireguard" | "outbound"; text: string /* a WireGuard .conf, or sing-box outbound JSON */ };
+export type ExitTest = { ok: boolean; message: string; latencyMs: number | null; server: string | null };
 
 export type HealthCheck = { key: string; name: string; status: "ok" | "warn" | "bad" | "off"; detail: string; since: string | null; link: string | null };
 export type HealthUpdate = { version: string; at: string; result: "healthy" | "rolled-back" | "pending"; note: string | null };
