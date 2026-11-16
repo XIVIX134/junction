@@ -44,7 +44,9 @@ func (s *State) bundleAt(now time.Time, evs []bundleEvent, end *bundleEvent) (*B
 	}
 	var rows []row
 	hourTotal := map[int64]int64{}
-	err := s.sumUsage(renewal.At.Truncate(time.Hour), now.Add(time.Hour), "", func(h int64, _, exit string, down, up int64) {
+	// Up to the end of now's clock hour, not into the next one (now can be a past moment).
+	upto := now.Truncate(time.Hour).Add(time.Hour)
+	err := s.sumUsage(renewal.At.Truncate(time.Hour), upto, "", func(h int64, _, exit string, down, up int64) {
 		rows = append(rows, row{h, down + up, exit == "direct"})
 		hourTotal[h] += down + up
 	})
@@ -107,7 +109,7 @@ func (s *State) bundleAt(now time.Time, evs []bundleEvent, end *bundleEvent) (*B
 		}
 	}
 	// Used and left: what the ISP bills, whole packets (wire.go).
-	billed, f := s.billed(hourTotal, renewal.At.Truncate(time.Hour), now.Add(time.Hour))
+	billed, f := s.billed(hourTotal, renewal.At.Truncate(time.Hour), upto)
 	var used, sinceAnchor int64
 	for h, n := range billed {
 		used += part(h, n)

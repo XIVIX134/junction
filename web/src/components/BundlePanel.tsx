@@ -711,9 +711,11 @@ export function driftOf(e: BundleEvent, older: BundleEvent[]) {
   if (e.kind !== "check" || e.expected == null) return null;
   const prev = older[0];
   const diff = e.amount - e.expected; // > 0: the ISP says more is left, Junction counted too much
-  const counted = prev ? prev.amount - e.expected : 0;
-  const pct = counted > 0 ? (Math.abs(diff) / counted) * 100 : null;
-  return { diff, pct, close: pct != null ? pct < 0.5 : Math.abs(diff) < 0.2e9 };
+  // As a share of what the ISP counted since the entry before; only when that was
+  // enough to say something (the ISP's app is about 0.1 GB either way).
+  const isp = prev ? prev.amount - e.amount : 0;
+  const pct = isp >= 2e9 ? (Math.abs(diff) / isp) * 100 : null;
+  return { diff, pct, isp, close: Math.abs(diff) <= 0.1e9 || (pct != null && pct < 0.5) };
 }
 
 function Drift({ e, older }: { e: BundleEvent; older: BundleEvent[] }) {
@@ -728,10 +730,11 @@ function Drift({ e, older }: { e: BundleEvent; older: BundleEvent[] }) {
   const amt = gbs(Math.abs(d.diff));
   const pct = d.pct != null ? ` (${d.pct < 10 ? d.pct.toFixed(1) : Math.round(d.pct)}%)` : "";
   const tip = d.close
-    ? "Junction and your ISP agreed."
-    : d.diff > 0
-      ? `Since the entry before, Junction counted ${amt}${pct} more than your ISP did.`
-      : `Since the entry before, your ISP counted ${amt}${pct} more than Junction did: traffic that didn't go through the gateway, for example.`;
+    ? "Junction and your ISP agreed (within 0.1 GB)."
+    : (d.diff > 0
+        ? `Since the entry before, your ISP counted ${gbs(d.isp)} and Junction ${amt} more than that.`
+        : `Since the entry before, your ISP counted ${gbs(d.isp)} and Junction ${amt} less than that: traffic that didn't go through the gateway, for example.`) +
+      (d.pct == null ? "\nToo little in between for a percentage." : "");
   return (
     <>
       <td className="rt num">{gbs(e.expected!)}</td>

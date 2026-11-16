@@ -82,19 +82,39 @@ func (s *State) calibrate(evs []bundleEvent, now time.Time) *Calibration {
 			past = append(past, e)
 		}
 	}
+	// Walk back from the newest figure. Each interval reaches back to the nearest
+	// earlier entry at least 10 GB (by the ISP's count) before it, so logging often
+	// doesn't make the intervals too small to say anything. Never across a renewal.
 	c := &Calibration{}
-	for i := len(past) - 1; i >= 1 && c.Intervals < calibKeep; i-- {
-		a, b := past[i-1], past[i]
-		if b.Kind != "check" || b.At.Sub(a.At) < calibMinGap {
+	for i := len(past) - 1; i >= 1 && c.Intervals < calibKeep; {
+		b := past[i]
+		if b.Kind != "check" {
+			i--
 			continue
 		}
+		k := -1
+		for j := i - 1; j >= 0; j-- {
+			if past[j].Amount-b.Amount >= calibMinBytes && b.At.Sub(past[j].At) >= calibMinGap {
+				k = j
+				break
+			}
+			if past[j].Kind == "renewal" {
+				break
+			}
+		}
+		if k < 0 {
+			i--
+			continue
+		}
+		a := past[k]
+		i = k
 		isp := a.Amount - b.Amount
 		j, err := s.billedBetween(a, b, now)
-		if err != nil || j < calibMinBytes || isp <= 0 {
+		if err != nil || j < calibMinBytes/2 {
 			continue
 		}
 		if r := float64(isp) / float64(j); r < calibLowRatio || r > calibHighRatio {
-			continue
+			continue // Junction wasn't seeing everything then
 		}
 		c.ISP += isp
 		c.Junction += j

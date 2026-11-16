@@ -51,7 +51,7 @@ func TestBundleExpectedAndPace(t *testing.T) {
 func TestExpectedOnlyCountsTheHourBeforeTheCheck(t *testing.T) {
 	s := countState(t)
 	t0 := time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)
-	s.store.addUsage(map[usageKey][2]int64{{Hour: t0.Unix(), Dev: "aa", Exit: "direct"}: {4e9, 0}})
+	s.store.addUsage(map[usageKey][2]int64{{Hour: t0.Unix(), Dev: "aa", Exit: "direct"}: {4e9, 0}, {Hour: t0.Unix() + 3600, Dev: "aa", Exit: "direct"}: {7e9, 0}}) // the next hour must not count
 	s.store.addBundleEvent("renewal", t0, 100e9, nil, 0)
 	s.store.addBundleEvent("check", t0.Add(30*time.Minute), 90e9, nil, 1e9) // 1 of the hour's 4 GB came before it
 	info, _ := s.bundleInfo(t0.Add(2 * time.Hour))
@@ -111,5 +111,25 @@ func TestCalibrationIgnoresTimesJunctionMissedTraffic(t *testing.T) {
 	b, _ := s.bundle(t0.Add(18 * time.Hour))
 	if b.Calibration != nil {
 		t.Fatalf("calibrated from an interval where most traffic bypassed the gateway: %+v", b.Calibration)
+	}
+}
+
+func TestFrequentFiguresStillCalibrate(t *testing.T) {
+	s := countState(t)
+	t0 := time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)
+	u := map[usageKey][2]int64{}
+	for h := 0; h < 30; h++ {
+		u[usageKey{Hour: t0.Add(time.Duration(h) * time.Hour).Unix(), Dev: "aa", Exit: "direct"}] = [2]int64{2e9, 0}
+	}
+	s.store.addUsage(u)
+	hour := 2e9 * 1.061
+	s.store.addBundleEvent("renewal", t0, 200e9, nil, -1)
+	// A figure every 2 hours (about 4 GB apart): no single interval reaches 10 GB.
+	for h := 2; h <= 28; h += 2 {
+		s.store.addBundleEvent("check", t0.Add(time.Duration(h)*time.Hour), 200e9-int64(float64(h)*hour*0.976), nil, -1)
+	}
+	b, _ := s.bundle(t0.Add(29 * time.Hour))
+	if b.Calibration == nil || math.Abs(b.Calibration.Factor-0.976) > 0.001 {
+		t.Fatalf("calibration %+v", b.Calibration)
 	}
 }
