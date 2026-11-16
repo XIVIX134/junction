@@ -111,6 +111,8 @@ type Bundle struct {
 	OverheadPct      float64 `json:"overheadPct"` // packet overhead added to content for hours not counted on the wire
 	PacePerDay       int64   `json:"pacePerDay"`
 	RunsOut          *string `json:"runsOut"`
+	// How your ISP's count compares to Junction's, from the figures you logged (nil: not known yet).
+	Calibration *Calibration `json:"calibration"`
 }
 
 type BundleEvent struct {
@@ -119,6 +121,8 @@ type BundleEvent struct {
 	At        string  `json:"at"`
 	Amount    int64   `json:"amount"`
 	ExpiresAt *string `json:"expiresAt"`
+	// Checks: what Junction said was left at that moment, counting from the entry before.
+	Expected *int64 `json:"expected,omitempty"`
 }
 
 type BundleInfo struct {
@@ -148,6 +152,8 @@ type Overview struct {
 	GatewayIP  string `json:"gatewayIP"`
 	Timezone   string `json:"timezone"`
 	BackupName string `json:"backupName"` // what the backup gateway box is called
+	SpeedUnit  string `json:"speedUnit"`  // "bits" or "bytes" (Settings)
+	TimeFormat string `json:"timeFormat"` // "24h" or "12h" (Settings)
 }
 
 type HourUsage struct {

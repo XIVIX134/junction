@@ -455,11 +455,15 @@ let events: BundleEvent[] = [];
 if (process.env.MOCK_NO_BUNDLE !== "1") {
   const renewedAt = Math.floor((startedAt - 2 * DAY) / HOUR) * HOUR;
   const checkedAt = Math.floor((startedAt - DAY) / HOUR) * HOUR;
-  // What the ISP's app said: a bit less than the gateway counted, as phones bypass it.
+  const checked2 = Math.floor((startedAt - 3 * HOUR) / HOUR) * HOUR + 20 * 60000;
+  // What the ISP's app said: a bit less left than the gateway counted, as a phone bypassed it;
+  // then, once everything used the gateway, within a whisker of it.
   const setLeft = Math.round((140 * GB - counted(renewedAt, checkedAt).total * 1.12) / 1e8) * 1e8;
+  const setLeft2 = Math.round((setLeft - counted(checkedAt, checked2).total * 0.996) / 1e7) * 1e7;
   events = [
     { id: nextId++, kind: "renewal", at: iso(new Date(renewedAt)), amount: 140 * GB, expiresAt: iso(new Date(renewedAt + 30 * DAY)) },
     { id: nextId++, kind: "check", at: iso(new Date(checkedAt)), amount: setLeft, expiresAt: null },
+    { id: nextId++, kind: "check", at: iso(new Date(checked2)), amount: setLeft2, expiresAt: null },
   ];
 }
 
@@ -476,7 +480,8 @@ function bundle(now: Date): Bundle | null {
   const since = counted(rAt, t);
   const left = anchor.amount - counted(new Date(anchor.at).getTime(), t).total;
   const elapsed = t - rAt;
-  const pacePerDay = elapsed >= 6 * HOUR ? Math.round(since.total / (elapsed / DAY)) : 0;
+  const spent = check ? renewal.amount - left : since.total; // the ISP's figure at the last check, then the count
+  const pacePerDay = elapsed >= 6 * HOUR ? Math.round(spent / (elapsed / DAY)) : 0;
   const runsOut = pacePerDay > 0 && left > 0 ? iso(new Date(t + (left / pacePerDay) * DAY)) : null;
   return {
     renewedAt: renewal.at,
@@ -490,12 +495,19 @@ function bundle(now: Date): Bundle | null {
     pacePerDay,
     runsOut,
     overheadPct: 6.1,
+    calibration: check ? { factor: 0.976, isp: 10.40e9, junction: 10.66e9, intervals: 1, since: (events.find((e) => e.kind === "check") ?? renewal).at } : null,
   };
 }
 
 export function bundleState(now = new Date()): BundleState {
   const list = [...events].sort((a, b) => b.at.localeCompare(a.at) || b.id - a.id).slice(0, 50);
-  return { current: bundle(now), events: list };
+  // Checks: what Junction said was left at that moment, counting from the entry before.
+  const withExpected = list.map((e, i) => {
+    const prev = list[i + 1];
+    if (e.kind !== "check" || !prev) return e;
+    return { ...e, expected: prev.amount - counted(new Date(prev.at).getTime(), new Date(e.at).getTime()).total };
+  });
+  return { current: bundle(now), events: withExpected };
 }
 
 function when(v: unknown, label: string): number | string | undefined {
@@ -703,7 +715,9 @@ export function traffic(q: URLSearchParams) {
     const h0 = cur - i * HOUR;
     const t = counted(h0, Math.min(now, h0 + HOUR));
     // counted() splits tunnel/direct; down/up use a typical 88/12 split
-    hours.push({ hour: iso(new Date(h0)), down: Math.round(t.total * 0.88), up: Math.round(t.total * 0.12) });
+    // billed: whole packets, as the ISP counts them (headers and the gateway's own traffic)
+    const part = (Math.min(now, h0 + HOUR) - h0) / HOUR;
+    hours.push({ hour: iso(new Date(h0)), down: Math.round(t.total * 0.88), up: Math.round(t.total * 0.12), billed: Math.round(t.total * 1.068 + 4e6 * part) });
   }
   return { hours };
 }

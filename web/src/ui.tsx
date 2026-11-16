@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Device, GatewayEvent } from "./api/types";
 import { LineChart } from "./charts";
-import { bytes, hm, hms } from "./fmt";
+import { bytes, hm, hms, speedAxis, speedValue } from "./fmt";
 
 // Small shared pieces of the console: icons, switch, charts, state strip, pop-up menu.
 
@@ -107,14 +107,13 @@ export const Radio = ({ on }: { on: boolean }) => <span className={on ? "radio o
 
 export { Spark, useWidth } from "./charts";
 
-const mbit = (v: number) => `${v === 0 ? "0" : v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1).replace(/.0$/, "") : v.toFixed(2).replace(/0$/, "")} Mbit/s`;
 
-/** Hourly traffic as an average rate (Mbit/s), with the current hour averaged over the minutes so far. */
+/** Hourly traffic as an average rate (Mbit/s or MB/s), with the current hour averaged over the minutes so far. */
 export function HourChart({ hours, now, h = 196, label }: { hours: { hour: string; down: number; up: number }[]; now: number; h?: number; label: string }) {
   const start = hours.length ? Date.parse(hours[0].hour) : now;
   const cur = Math.floor((now - start) / 3600e3);
   const secs = (i: number) => (i < cur ? 3600 : Math.max(60, (now - Date.parse(hours[i].hour)) / 1e3));
-  const vals = (k: "down" | "up") => hours.map((x, i) => (i <= cur ? (x[k] * 8) / secs(i) / 1e6 : null));
+  const vals = (k: "down" | "up") => hours.map((x, i) => (i <= cur ? speedValue(x[k] / secs(i)) : null));
   const span = Math.max(1, hours.length - 1);
   return (
     <LineChart
@@ -132,7 +131,7 @@ export function HourChart({ hours, now, h = 196, label }: { hours: { hour: strin
         { name: "Download", values: vals("down"), color: "var(--series-down)", fill: true },
         { name: "Upload", values: vals("up"), color: "var(--series-up)" },
       ]}
-      yFmt={mbit}
+      yFmt={speedAxis}
       markers={hours.length ? [{ at: (now - start) / 3600e3 > span ? span : (now - start) / 3600e3, label: `Now ${hm(now)}` }] : []}
     />
   );

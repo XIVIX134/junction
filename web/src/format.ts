@@ -1,6 +1,6 @@
 // Formatting: bytes in decimal units, rates in Mb/s, all dates in the gateway's local time.
 
-import { SITE_TZ } from "./site";
+import { clock12, SITE_TZ } from "./site";
 
 /** The gateway's time zone (Settings → General). */
 export const TZ = SITE_TZ;
@@ -79,8 +79,10 @@ export function dateTime(s: string | null | undefined, now: Date = new Date(), a
   const p = parts(d);
   const n = parts(now);
   const sameDay = p.year === n.year && p.month === n.month && p.day === n.day;
-  if (sameDay && !alwaysDate) return `${p.hour}:${p.minute}`;
-  return `${p.month} ${p.day}, ${p.hour}:${p.minute}`;
+  const h = +p.hour;
+  const t = clock12() ? `${h % 12 || 12}:${p.minute} ${h < 12 ? "AM" : "PM"}` : `${p.hour}:${p.minute}`;
+  if (sameDay && !alwaysDate) return t;
+  return `${p.month} ${p.day}, ${t}`;
 }
 
 /** "Nov 23". */

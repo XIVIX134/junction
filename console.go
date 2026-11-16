@@ -74,6 +74,9 @@ type trafficHour struct {
 	Hour string `json:"hour"`
 	Down int64  `json:"down"`
 	Up   int64  `json:"up"`
+	// Whole network only: what the ISP bills for the hour (whole packets on the wire,
+	// the gateway's own traffic included; wire.go). Devices add up to down+up.
+	Billed *int64 `json:"billed,omitempty"`
 }
 
 // GET /api/traffic?hours=24[&device=id] -> { hours: [...] } oldest first, the current hour last
@@ -93,16 +96,28 @@ func (a *API) traffic(w http.ResponseWriter, r *http.Request) {
 	for i := range out {
 		out[i].Hour = from.Add(time.Duration(i) * time.Hour).UTC().Format(time.RFC3339)
 	}
-	err := a.s.sumUsage(from, now.Add(time.Hour), r.URL.Query().Get("device"), func(h int64, _, _ string, down, up int64) {
+	dev := r.URL.Query().Get("device")
+	content := map[int64]int64{}
+	err := a.s.sumUsage(from, now.Add(time.Hour), dev, func(h int64, _, _ string, down, up int64) {
 		i := int((h - from.Unix()) / 3600)
 		if i >= 0 && i < n {
 			out[i].Down += down
 			out[i].Up += up
+			content[h] += down + up
 		}
 	})
 	if err != nil {
 		fail(w, 500, "Could not read usage from the database: "+err.Error())
 		return
+	}
+	if dev == "" {
+		billed, _ := a.s.billed(content, from, now.Add(time.Hour))
+		f := a.s.ispFactor()
+		for i := range out {
+			h := from.Add(time.Duration(i) * time.Hour).Unix()
+			b := int64(float64(billed[h]) * f)
+			out[i].Billed = &b
+		}
 	}
 	send(w, map[string]any{"hours": out})
 }

@@ -162,6 +162,8 @@ type Settings struct {
 	Brand            Brand            `json:"brand"`
 	Timezone         string           `json:"timezone"`
 	TimezoneDetected string           `json:"timezoneDetected"`
+	SpeedUnit        string           `json:"speedUnit"`  // "bits" (Mbit/s) or "bytes" (MB/s): how every screen shows speeds
+	TimeFormat       string           `json:"timeFormat"` // "24h" (14:30) or "12h" (2:30 PM)
 	Network          NetworkSettings  `json:"network"`
 	DHCP             *DHCPSettings    `json:"dhcp"`
 	VPN              VPNSettings      `json:"vpn"`
@@ -381,11 +383,29 @@ func (s *State) savedConfig() Config {
 	return c
 }
 
+// speedUnit is how speeds are shown: "bits" (Mbit/s, the default) or "bytes" (MB/s).
+func (s *State) speedUnit() string {
+	if s.setting("speed_unit", "bits") == "bytes" {
+		return "bytes"
+	}
+	return "bits"
+}
+
+// timeFormat is how clock times are shown: "24h" (the default) or "12h".
+func (s *State) timeFormat() string {
+	if s.setting("time_format", "24h") == "12h" {
+		return "12h"
+	}
+	return "24h"
+}
+
 func (s *State) settings() Settings {
 	b := s.savedConfig()
 	out := Settings{
 		Timezone:         s.setting("timezone", s.base.TimeZone),
 		TimezoneDetected: detectTimezone(s.base.TimeZone),
+		SpeedUnit:        s.speedUnit(),
+		TimeFormat:       s.timeFormat(),
 		Version:          version,
 	}
 	s.mu.RLock()

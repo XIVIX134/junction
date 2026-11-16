@@ -545,6 +545,7 @@ export function StatTile({
   trendLabel,
   trendFmt,
   sub,
+  tip,
 }: {
   label: string;
   value: number | null;
@@ -555,12 +556,13 @@ export function StatTile({
   trendLabel?: string;
   trendFmt?: (v: number) => string;
   sub?: ReactNode;
+  tip?: string; // hover popup on the figure (first line the title, the rest details)
 }) {
   const shown = useCountUp(value ?? 0);
   return (
     <div className="stat">
       <div className="stat-l">{label}</div>
-      <div className="stat-v">
+      <div className="stat-v" title={tip}>
         {value == null ? "—" : fmt(shown)}
         {unit && <span className="stat-u">{unit}</span>}
       </div>

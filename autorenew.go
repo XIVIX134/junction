@@ -39,5 +39,6 @@ func (s *State) autoRenewNow() {
 		log.Printf("bundle: logging the monthly renewal: %v", err)
 		return
 	}
+	s.forgetISPFactor()
 	log.Printf("bundle: logged the monthly renewal of %g GB on %s", a.SizeGB, at.Format("2 Jan"))
 }

@@ -38,7 +38,7 @@ export type SimulateResult = { effective: Effective; matched: { id: number; name
 
 export type DeviceLink = { id: string; ip: string; mac: string; name: string; online: boolean };
 
-export type TrafficHours = { hours: { hour: string; down: number; up: number }[] };
+export type TrafficHours = { hours: { hour: string; down: number; up: number; billed?: number /* whole network: what the ISP bills */ }[] };
 export type ExitHistory = { samples: { at: string; exits: Record<string, number | null | undefined> }[] };
 
 export type NameSource = "user" | "router" | "dhcp" | "mdns" | "upnp" | "vendor" | "ip";
@@ -135,9 +135,18 @@ export type Bundle = {
   pacePerDay: number; // 0 until there are >= 6 h of data
   overheadPct: number; // packet overhead added to content for hours not counted on the wire
   runsOut: string | null;
+  // How your ISP's count compares to Junction's, from the figures you logged (null until known).
+  calibration?: { factor: number; isp: number; junction: number; intervals: number; since: string } | null;
 };
 
-export type BundleEvent = { id: number; kind: "renewal" | "check"; at: string; amount: number; expiresAt: string | null };
+export type BundleEvent = {
+  id: number;
+  kind: "renewal" | "check";
+  at: string;
+  amount: number;
+  expiresAt: string | null;
+  expected?: number; // checks: what Junction said was left at that moment
+};
 export type BundleState = { current: Bundle | null; events: BundleEvent[] };
 export type RenewalBody = { gb: number; at?: string; expiresAt?: string | null };
 export type CheckBody = { gbLeft: number; at?: string };
@@ -147,6 +156,8 @@ export type Overview = {
   gatewayIP?: string;
   timezone?: string;
   backupName?: string;
+  speedUnit?: "bits" | "bytes"; // how every screen shows speeds (Settings → General)
+  timeFormat?: "24h" | "12h"; // how every screen shows times
   now: string;
   live: { down: number; up: number };
   top: { deviceId: string; name: string; rateDown: number } | null;
@@ -192,6 +203,8 @@ export type Settings = {
   brand: Brand;
   timezone: string;
   timezoneDetected: string;
+  speedUnit: "bits" | "bytes";
+  timeFormat: "24h" | "12h";
   network: {
     gatewayIP: string;
     lan: string;
@@ -244,6 +257,8 @@ export type Settings = {
 export type SettingsPatch = {
   brand?: Partial<Brand>;
   timezone?: string;
+  speedUnit?: "bits" | "bytes";
+  timeFormat?: "24h" | "12h";
   network?: Partial<{ gatewayIP: string; lan: string; iface: string; learnNamesFromDHCP: boolean; backupName: string; backupIP: string }> & {
     router?: { url: string; user?: string; password?: string } | null;
   };

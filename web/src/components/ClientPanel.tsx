@@ -5,7 +5,7 @@ import { api, ApiError } from "../api/client";
 import type { Device, DeviceDetail, Overview, Profile, Rule, RuleSchedule } from "../api/types";
 import { defaultProfile, effVpn, NAME_SOURCE, route, status } from "../clients";
 import { useDeviceActions, useDeviceControlState, withPending } from "../deviceControl";
-import { bytes, DAY3, dmy, exitName, hm, rate, whenShort } from "../fmt";
+import { bytes, capFromInput, clockText, capInput, capRange, capText, DAY3, dmy, exitName, hm, rate, speedUnit, whenShort } from "../fmt";
 import { useFetch, useLive } from "../live";
 import { groupsOf } from "../model";
 import { gatewayClock, dailyLimitRule, minutesUntilWindowEnd, pausingRule, scheduleRule } from "../rules";
@@ -387,7 +387,7 @@ function SettingsTab({ d, o, rules, reload }: { d: Device; o: Overview; rules: R
               items={[
                 { label: "15 minutes", onPick: () => act.pause(d, 15) },
                 { label: "1 hour", onPick: () => act.pause(d, 60) },
-                { label: "Until 07:00", onPick: () => act.pause(d, minutesUntil(7, now)) },
+                { label: `Until ${clockText("07:00")}`, onPick: () => act.pause(d, minutesUntil(7, now)) },
                 { label: "Until resumed", onPick: () => act.pause(d) },
               ]}
             />
@@ -453,21 +453,21 @@ function SettingsTab({ d, o, rules, reload }: { d: Device; o: Overview; rules: R
 
 function SpeedSection({ d, reload }: { d: Device; reload: () => void }) {
   const a = useAct(reload);
-  const [v, setV] = useState(d.speedLimitMbps != null ? String(d.speedLimitMbps) : "");
-  useEffect(() => setV(d.speedLimitMbps != null ? String(d.speedLimitMbps) : ""), [d.speedLimitMbps]);
+  const [v, setV] = useState(d.speedLimitMbps != null ? capInput(d.speedLimitMbps) : "");
+  useEffect(() => setV(d.speedLimitMbps != null ? capInput(d.speedLimitMbps) : ""), [d.speedLimitMbps]);
   const cap = d.effective?.speedLimitMbps ?? d.speedLimitMbps ?? null;
   const can = !!d.controllable;
   return (
     <div className="sec">
       <div className="st">
-        Speed limit<span className="r t3">{cap != null ? `${cap} Mbit/s${cap !== d.speedLimitMbps ? " (rule)" : ""}` : "No limit"}</span>
+        Speed limit<span className="r t3">{cap != null ? `${capText(cap)}${cap !== d.speedLimitMbps ? " (rule)" : ""}` : "No limit"}</span>
       </div>
       <form
         className="ctl"
         onSubmit={(ev) => {
           ev.preventDefault();
-          const n = Number(v);
-          if (!(n >= 0.5 && n <= 1000)) return a.setMsg({ ok: false, t: "Use 0.5 to 1000 Mbit/s." });
+          const n = capFromInput(v);
+          if (n == null) return a.setMsg({ ok: false, t: capRange() });
           a.run(() => api.setDeviceSpeed(d.id, n), null, "Couldn't set the speed limit.");
         }}
       >
@@ -476,12 +476,12 @@ function SpeedSection({ d, reload }: { d: Device; reload: () => void }) {
           style={{ width: 84 }}
           placeholder="—"
           inputMode="decimal"
-          aria-label="Speed limit (Mbit/s, both directions)"
+          aria-label={`Speed limit (${speedUnit()}, both directions)`}
           value={v}
           disabled={!can || a.busy}
           onChange={(ev) => setV(ev.target.value)}
         />
-        <span className="t2">Mbit/s, both directions</span>
+        <span className="t2">{speedUnit()}, both directions</span>
         <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
           {d.speedLimitMbps != null && (
             <button type="button" className="btn ghost" disabled={a.busy} onClick={() => a.run(() => api.setDeviceSpeed(d.id, null), null, "Couldn't remove the limit.")}>
@@ -503,12 +503,12 @@ function LimitSection({ d, rules, reload }: { d: Device; rules: Rule[]; reload: 
   const a = useAct(reload);
   const [gbv, setGb] = useState(rule?.when.usage ? String(rule.when.usage.overGB) : "");
   const [then, setThen] = useState<"speed" | "pause">(rule?.then.pause ? "pause" : "speed");
-  const [mbps, setMbps] = useState(String(rule?.then.speedMbps ?? 2));
+  const [mbps, setMbps] = useState(capInput(rule?.then.speedMbps ?? 2));
   useEffect(() => {
     if (!rule) return;
     setGb(String(rule.when.usage?.overGB ?? ""));
     setThen(rule.then.pause ? "pause" : "speed");
-    setMbps(String(rule.then.speedMbps ?? 2));
+    setMbps(capInput(rule.then.speedMbps ?? 2));
   }, [rule?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const used = d.todayDown + d.todayUp;
@@ -520,15 +520,15 @@ function LimitSection({ d, rules, reload }: { d: Device; rules: Rule[]; reload: 
 
   function save() {
     const g = Number(gbv);
-    const m = Number(mbps);
+    const m = capFromInput(mbps);
     if (!(g > 0)) return a.setMsg({ ok: false, t: "Enter the daily amount in GB." });
-    if (then === "speed" && !(m >= 0.5 && m <= 1000)) return a.setMsg({ ok: false, t: "Use 0.5 to 1000 Mbit/s." });
+    if (then === "speed" && m == null) return a.setMsg({ ok: false, t: capRange() });
     const body = {
       name: rule?.name ?? `${d.name}: daily limit`,
       enabled: rule?.enabled ?? true,
       match: { devices: [d.id] },
       when: { usage: { period: "day" as const, overGB: g } },
-      then: then === "pause" ? { pause: true } : { speedMbps: m },
+      then: then === "pause" ? { pause: true } : { speedMbps: m ?? 2 },
     };
     a.run(() => (rule ? api.updateRule({ ...rule, ...body }) : api.createRule(body)), rule ? "Daily limit saved." : "Daily limit set.", "Couldn't save the daily limit.");
   }
@@ -547,7 +547,7 @@ function LimitSection({ d, rules, reload }: { d: Device; rules: Rule[]; reload: 
             <span className="t2">
               {bytes(used)} of {rule.when.usage?.overGB} GB today
             </span>
-            {active && <span className="warnc">{rule.then.pause ? "Paused" : `Slowed to ${rule.then.speedMbps} Mbit/s`}</span>}
+            {active && <span className="warnc">{rule.then.pause ? "Paused" : `Slowed to ${capText(rule.then.speedMbps ?? 0)}`}</span>}
           </div>
           <div className="bar" style={{ marginTop: 6 }} role="img" aria-label={`${bytes(used)} of ${rule.when.usage?.overGB} GB used today`}>
             <i style={{ width: `${Math.min(100, (used / Math.max(1, limit)) * 100)}%`, background: over ? "var(--warn)" : "var(--accent)" }} />
@@ -598,12 +598,12 @@ function LimitSection({ d, rules, reload }: { d: Device; rules: Rule[]; reload: 
                 className="inp num"
                 style={{ width: 52 }}
                 inputMode="decimal"
-                aria-label="To (Mbit/s)"
+                aria-label={`To (${speedUnit()})`}
                 value={mbps}
                 disabled={!can || a.busy}
                 onChange={(ev) => setMbps(ev.target.value)}
               />
-              <span className="t2">Mbit/s</span>
+              <span className="t2">{speedUnit()}</span>
             </>
           )}
           <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
@@ -697,11 +697,11 @@ function ScheduleSection({ d, rules, reload }: { d: Device; rules: Rule[]; reloa
           <span className="t2" aria-hidden="true">
             From
           </span>
-          <input className="inp num" style={{ width: 64 }} aria-label="From" placeholder="23:00" value={s.start} disabled={!can} onChange={(ev) => setS({ ...s, start: ev.target.value })} />
+          <input className="inp num" type="time" style={{ width: 112 }} aria-label="From" value={s.start} disabled={!can} onChange={(ev) => setS({ ...s, start: ev.target.value })} />
           <span className="t2" aria-hidden="true">
             to
           </span>
-          <input className="inp num" style={{ width: 64 }} aria-label="To" placeholder="07:00" value={s.end} disabled={!can} onChange={(ev) => setS({ ...s, end: ev.target.value })} />
+          <input className="inp num" type="time" style={{ width: 112 }} aria-label="To" value={s.end} disabled={!can} onChange={(ev) => setS({ ...s, end: ev.target.value })} />
           <span style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap" }}>
             {rule && active && !ex && (
               <button

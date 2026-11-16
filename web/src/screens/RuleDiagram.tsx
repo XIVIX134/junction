@@ -20,7 +20,9 @@ import { api, ApiError } from "../api/client";
 import type { Device, Overview, Profile, Rule, RuleDraft, RuleThen, RuleWhen } from "../api/types";
 import { ScheduleEditor, UsageEditor, validateRule, WhoEditor } from "../components/RuleParts";
 import { scheduleText, thenText, usageText, whoText } from "../rules";
+import { capInput, capText, speedUnit } from "../fmt";
 import { useProfiles } from "../prefs";
+import { speedInBytes } from "../site";
 import { Icon } from "../ui";
 
 // Diagram editor for ONE rule: Who → When (conditions) → Then (actions), drawn like Topology's nodes.
@@ -115,7 +117,7 @@ function nodeText(k: Kind, r: RuleDraft, devices: Device[]) {
     case "pause":
       return "Blocks the internet";
     case "speed":
-      return `Slow to ${r.then.speedMbps ?? "?"} Mbit/s`;
+      return r.then.speedMbps != null ? `Slow to ${capText(r.then.speedMbps)}` : "Slow to ?";
     case "vpn":
       return r.then.vpn === false ? "Force VPN off" : "Force VPN on";
     case "profile":
@@ -341,8 +343,16 @@ function Panel({ k, r, setR, devices, onRemove }: { k: Kind; r: RuleDraft; setR:
       {k === "pause" && <p className="note">Blocks the internet for matching devices while the conditions hold.</p>}
       {k === "speed" && (
         <label className="field">
-          Cap (Mbit/s, both directions)
-          <input className="inp" type="number" min={0.5} max={1000} step={0.5} value={r.then.speedMbps ?? 2} onChange={(e) => then({ speedMbps: Number(e.target.value) })} />
+          Cap ({speedUnit()}, both directions)
+          <input
+            className="inp"
+            type="number"
+            min={speedInBytes() ? 0.1 : 0.5}
+            max={speedInBytes() ? 125 : 1000}
+            step={speedInBytes() ? 0.05 : 0.5}
+            value={capInput(r.then.speedMbps ?? 2)}
+            onChange={(e) => then({ speedMbps: speedInBytes() ? +(Number(e.target.value) * 8).toFixed(3) : Number(e.target.value) })}
+          />
         </label>
       )}
       {k === "vpn" && (

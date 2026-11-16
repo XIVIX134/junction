@@ -2,7 +2,9 @@ import { useState } from "react";
 import { api, ApiError } from "../api/client";
 import type { Device, Profile, Rule, RuleDraft, RuleMatch, RuleSchedule, RuleThen, RuleUsage } from "../api/types";
 import { groupsOf } from "../model";
+import { capInput, speedUnit } from "../fmt";
 import { useProfiles } from "../prefs";
+import { speedInBytes } from "../site";
 import { DAY_LETTER, DAY_SHORT, hasAction, ruleSummary } from "../rules";
 
 // Small, restylable editors for the parts of a rule. Used by the rule form, the node editor's side panel,
@@ -215,15 +217,15 @@ export function ThenEditor({ t, onChange }: { t: RuleThen; onChange: (t: RuleThe
         <input
           className="inp"
           type="number"
-          min={0.5}
-          max={1000}
-          step={0.5}
-          value={t.speedMbps ?? 2}
+          min={speedInBytes() ? 0.1 : 0.5}
+          max={speedInBytes() ? 125 : 1000}
+          step={speedInBytes() ? 0.05 : 0.5}
+          value={capInput(t.speedMbps ?? 2)}
           disabled={t.speedMbps == null}
-          aria-label="Speed limit in Mbit/s"
-          onChange={(e) => set({ speedMbps: Number(e.target.value) })}
+          aria-label={`Speed limit in ${speedUnit()}`}
+          onChange={(e) => set({ speedMbps: speedInBytes() ? +(Number(e.target.value) * 8).toFixed(3) : Number(e.target.value) })}
         />
-        Mbit/s
+        {speedUnit()}
       </label>
       <label className="check">
         <input type="checkbox" checked={t.vpn != null} onChange={(e) => set({ vpn: e.target.checked ? true : undefined })} />
@@ -255,7 +257,7 @@ export function validateRule(r: RuleDraft): string | null {
   if (r.when.schedule && r.when.schedule.days.length === 0) return "Pick at least one day.";
   if (r.when.usage && !(r.when.usage.overGB > 0)) return "The data amount must be more than 0 GB.";
   if (!hasAction(r.then)) return "Pick at least one thing to do.";
-  if (r.then.speedMbps != null && (r.then.speedMbps < 0.5 || r.then.speedMbps > 1000)) return "Speed must be between 0.5 and 1000 Mbit/s.";
+  if (r.then.speedMbps != null && (r.then.speedMbps < 0.5 || r.then.speedMbps > 1000)) return speedInBytes() ? "Speed must be between 0.1 and 125 MB/s." : "Speed must be between 0.5 and 1000 Mbit/s.";
   return null;
 }
 

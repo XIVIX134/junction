@@ -4,6 +4,7 @@ import type { Settings as S, SettingsPatch, SettingsSaved } from "../api/types";
 import { BrandMark } from "../components/Brand";
 import { useSettings, useTheme, type ThemeMode } from "../prefs";
 import { Link, useLocation } from "../router";
+import { setSpeedUnit, setTimeFormat } from "../site";
 import { Sw } from "../ui";
 import { Field, Panel, Row, Seg } from "./SettingsParts";
 import { Advanced, Bundle, Data, Dhcp, Network, Updates, Vpn } from "./SettingsConfig";
@@ -147,6 +148,34 @@ function General({ s, apply }: P) {
             ["system", "Match system"],
           ]}
           onPick={setMode}
+        />
+      </Row>
+      <Row k="Speeds" hint="Live rates, charts and speed limits, on every screen. 1 MB/s = 8 Mbit/s.">
+        <Seg<"bits" | "bytes">
+          label="Show speeds in"
+          value={s.speedUnit}
+          options={[
+            ["bits", "Mbit/s"],
+            ["bytes", "MB/s"],
+          ]}
+          onPick={(speedUnit) => {
+            setSpeedUnit(speedUnit);
+            apply({ speedUnit }, speedUnit === "bytes" ? "Speeds are shown in MB/s." : "Speeds are shown in Mbit/s.");
+          }}
+        />
+      </Row>
+      <Row k="Clock" hint="How times are shown on every screen.">
+        <Seg<"24h" | "12h">
+          label="Clock"
+          value={s.timeFormat}
+          options={[
+            ["24h", "24-hour (14:30)"],
+            ["12h", "12-hour (2:30 PM)"],
+          ]}
+          onPick={(timeFormat) => {
+            setTimeFormat(timeFormat);
+            apply({ timeFormat }, timeFormat === "12h" ? "Times are shown as 2:30 PM." : "Times are shown as 14:30.");
+          }}
         />
       </Row>
       <Row k="Time zone" hint="Times, days and schedules use it">

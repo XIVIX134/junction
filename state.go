@@ -21,8 +21,6 @@ type devState struct {
 	dirty            bool
 }
 
-type connPrev struct{ up, down int64 }
-
 // State holds everything Junction knows in memory. Usage is accumulated here
 // and flushed to SQLite every 30 s.
 type State struct {
@@ -48,8 +46,11 @@ type State struct {
 	devs     map[string]*devState
 	ipToID   map[string]string
 	nextSeq  int
-	prev     map[string]connPrev
+	prev     map[string]connPrev // each connection at the last reading (counting.go)
+	prevAt   time.Time           // when that reading was taken
 	primed   bool
+	global   [2]int64 // sing-box's running totals {down, up} at that reading
+	globalOK bool
 	liveDown float64
 	liveUp   float64
 	pending  map[usageKey][2]int64
@@ -94,6 +95,7 @@ type State struct {
 	update       updateState
 	cfgPath      string     // config.json, changed from Settings
 	settingsMu   sync.Mutex // one settings change at a time
+	isp          ispCache   // the ISP's ratio to Junction's count (calibrate.go)
 }
 
 func newState(cfg Config, store *Store) (*State, error) {
@@ -237,6 +239,7 @@ func (s *State) startLoops(ctx context.Context) {
 	go s.every(ctx, time.Minute, func(context.Context) {
 		s.store.setSetting("last_alive", strconv.FormatInt(time.Now().Unix(), 10))
 	})
+	s.resume(time.Now())
 	go s.every(ctx, time.Second, s.pollConnections)
 	go s.every(ctx, 15*time.Second, s.pollARP)
 	go s.every(ctx, 3*time.Minute, func(context.Context) { sweep(s.cfg.LAN) })
@@ -279,108 +282,6 @@ func (s *State) every(ctx context.Context, d time.Duration, f func(context.Conte
 			f(ctx)
 		}
 	}
-}
-
-func (s *State) pollConnections(ctx context.Context) {
-	var cc clashConns
-	err := getJSON(ctx, s.cfg.ClashAPI+"/connections", s.secret, &cc)
-	now := time.Now()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.clashErr = err
-	if err != nil {
-		return
-	}
-	s.lastClashOK = now
-
-	hour := now.Truncate(time.Hour).Unix()
-	day := now.In(s.loc).Format("2006-01-02")
-	next := make(map[string]connPrev, len(cc.Connections))
-	type agg struct {
-		down, up int64
-		conns    int
-		exit     string
-		best     int64
-		routed   bool // routed through the gateway (TPROXY), not just using its proxy port
-	}
-	per := map[string]*agg{}
-
-	for _, c := range cc.Connections {
-		next[c.ID] = connPrev{up: c.Upload, down: c.Download}
-		m := c.Metadata
-		if strings.HasPrefix(m.Type, "mixed/probe-") || s.selfIP[m.SourceIP] || m.SourceIP == "" || isPrivate(m.DestinationIP) {
-			continue
-		}
-		exit := "direct"
-		if len(c.Chains) > 0 {
-			exit = c.Chains[0]
-		}
-		p := s.prev[c.ID]
-		dDown, dUp := c.Download-p.down, c.Upload-p.up
-		if !s.primed || dDown < 0 || dUp < 0 {
-			dDown, dUp = 0, 0 // first poll after start: don't recount bytes from before we were watching
-		}
-		a := per[m.SourceIP]
-		if a == nil {
-			a = &agg{}
-			per[m.SourceIP] = a
-		}
-		a.conns++
-		a.down += dDown
-		a.up += dUp
-		if strings.HasPrefix(m.Type, "tproxy/") {
-			a.routed = true
-		}
-		if dDown+dUp >= a.best {
-			a.best, a.exit = dDown+dUp, exit
-		}
-		if dDown+dUp == 0 {
-			continue
-		}
-		id := s.idForIP(m.SourceIP)
-		k := usageKey{Hour: hour, Dev: id, Exit: exit}
-		v := s.pending[k]
-		s.pending[k] = [2]int64{v[0] + dDown, v[1] + dUp}
-		s.totalBytes += dDown + dUp
-		host := m.Host
-		if host == "" {
-			host = m.DestinationIP
-		}
-		s.hosts[[3]string{day, id, host}] += dDown + dUp
-	}
-	s.prev, s.primed = next, true
-
-	const alpha = 0.4 // ~3 s smoothing at 1 s polls
-	var totDown, totUp int64
-	seen := map[string]bool{}
-	for ip, a := range per {
-		id := s.idForIP(ip)
-		mac := ""
-		if !strings.HasPrefix(id, "ip:") {
-			mac = id
-		}
-		d := s.device(id, ip, mac, now)
-		seen[id] = true
-		d.rateDown = alpha*float64(a.down) + (1-alpha)*d.rateDown
-		d.rateUp = alpha*float64(a.up) + (1-alpha)*d.rateUp
-		d.conns = a.conns
-		d.exit = a.exit
-		d.LastSeen = now
-		if a.routed {
-			d.LastGateway = now // only real routing counts: proxy use doesn't make the switches work
-		}
-		totDown += a.down
-		totUp += a.up
-	}
-	for id, d := range s.devs {
-		if !seen[id] {
-			d.rateDown *= 1 - alpha
-			d.rateUp *= 1 - alpha
-			d.conns = 0
-		}
-	}
-	s.liveDown = alpha*float64(totDown) + (1-alpha)*s.liveDown
-	s.liveUp = alpha*float64(totUp) + (1-alpha)*s.liveUp
 }
 
 // refreshSelf re-reads our own addresses: the floating gateway address comes
@@ -512,6 +413,7 @@ func (s *State) flush() {
 	s.pending, s.hosts = map[usageKey][2]int64{}, map[[3]string]int64{}
 	merges := s.merges
 	s.merges = nil
+	snap := s.snapshotLocked() // the reading these usage buckets end at
 	var dirty []devRow
 	for _, d := range s.devs {
 		if d.dirty {
@@ -541,6 +443,8 @@ func (s *State) flush() {
 			s.pending[k] = [2]int64{o[0] + v[0], o[1] + v[1]}
 		}
 		s.mu.Unlock()
+	} else if snap != nil {
+		s.store.setSetting(snapshotKey, string(snap))
 	}
 	if err := s.store.addHosts(hosts); err != nil {
 		log.Printf("flush hosts: %v", err)
@@ -820,6 +724,8 @@ func (s *State) overview(now time.Time) (Overview, error) {
 		GatewayIP:  s.cfg.GatewayIP,
 		Timezone:   s.cfg.TimeZone,
 		BackupName: s.cfg.BackupName,
+		SpeedUnit:  s.speedUnit(),
+		TimeFormat: s.timeFormat(),
 	}
 	s.mu.RUnlock()
 	for _, d := range devs {

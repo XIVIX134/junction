@@ -659,6 +659,10 @@ func TestEveryControlShowsWhatWasSaved(t *testing.T) {
 			return s.Bundle.AutoRenew != nil && s.Bundle.AutoRenew.SizeGB == 140 && s.Bundle.AutoRenew.Day == 5
 		}},
 		{`{"bundle":{"autoRenew":null}}`, func(s Settings) bool { return s.Bundle.AutoRenew == nil }},
+		{`{"speedUnit":"bytes"}`, func(s Settings) bool { return s.SpeedUnit == "bytes" }},
+		{`{"speedUnit":""}`, func(s Settings) bool { return s.SpeedUnit == "bits" }},
+		{`{"timeFormat":"12h"}`, func(s Settings) bool { return s.TimeFormat == "12h" }},
+		{`{"timeFormat":""}`, func(s Settings) bool { return s.TimeFormat == "24h" }},
 		{`{"access":{"sessionDays":7}}`, func(s Settings) bool { return s.Access.SessionDays == 7 }},
 		{`{"updates":{"url":"https://api.github.com/repos/someone/junction/releases"}}`, func(s Settings) bool {
 			return s.Updates.URL == "https://api.github.com/repos/someone/junction/releases"

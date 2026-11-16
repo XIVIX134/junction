@@ -17,6 +17,8 @@ export const SITE_TZ = localStorage.getItem("tz") || browserTZ;
 const exitNames = new Map<string, string>();
 let exitOrder: string[] = JSON.parse(localStorage.getItem("exits") || "[]");
 let backupName = localStorage.getItem("backup") || "Backup";
+let speedBytes = localStorage.getItem("speed") === "bytes";
+let twelve = localStorage.getItem("clock") === "12h";
 
 export function syncSite(o: Overview) {
   const ext = o;
@@ -27,6 +29,8 @@ export function syncSite(o: Overview) {
     return;
   }
   if (ext.gatewayIP) setGatewayIP(ext.gatewayIP);
+  if (ext.speedUnit) setSpeedUnit(ext.speedUnit);
+  if (ext.timeFormat) setTimeFormat(ext.timeFormat);
   if (ext.backupName) {
     backupName = ext.backupName;
     localStorage.setItem("backup", backupName);
@@ -47,6 +51,24 @@ export const exitColorVar = (key: string) => {
   return i < 0 ? "var(--other)" : `var(--exit-${(i % 4) + 1})`;
 };
 export const backupLabel = () => backupName;
+
+// ---- clock: 24-hour or 12-hour (Settings → General) ----
+/** Times as "2:30 PM" instead of "14:30". */
+export const clock12 = () => twelve;
+export function setTimeFormat(f: "24h" | "12h") {
+  if ((f === "12h") === twelve) return;
+  twelve = f === "12h";
+  localStorage.setItem("clock", f);
+}
+
+// ---- speeds: Mbit/s or MB/s (Settings → General) ----
+/** Speeds in megabytes per second (MB/s) instead of megabits (Mbit/s). */
+export const speedInBytes = () => speedBytes;
+export function setSpeedUnit(u: "bits" | "bytes") {
+  if ((u === "bytes") === speedBytes) return;
+  speedBytes = u === "bytes";
+  localStorage.setItem("speed", u);
+}
 
 // ---- the gateway's address ----
 const fromURL = /^\d+\.\d+\.\d+\.\d+$/.test(location.hostname) ? location.hostname : "";

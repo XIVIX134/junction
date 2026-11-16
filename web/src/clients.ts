@@ -1,5 +1,5 @@
 import type { Device, Overview } from "./api/types";
-import { dayKey, dmy, exitName, hm } from "./fmt";
+import { capText, dayKey, dmy, exitName, hm } from "./fmt";
 
 // How the console talks about a client (wording from concepts5).
 
@@ -28,7 +28,7 @@ export function status(d: Device, rules: { id: number; name: string; then: { pau
   }
   if (isPaused(d)) return { t: d.pausedUntil ? `Paused until ${hm(d.pausedUntil)}` : "Paused", c: "warn" };
   const cap = capOf(d);
-  if (cap != null) return { t: `Capped ${cap} Mbit/s`, c: "warn" };
+  if (cap != null) return { t: `Capped ${capText(cap)}`, c: "warn" };
   if (d.online) return { t: "Online", c: "ok" };
   const ls = Date.parse(d.lastSeen);
   return {

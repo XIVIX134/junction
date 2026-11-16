@@ -260,6 +260,11 @@ func (a *API) usage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	billed, _ := a.s.billed(content, from, now.Add(time.Hour))
+	if f := a.s.ispFactor(); f != 1 {
+		for h, n := range billed {
+			billed[h] = int64(float64(n) * f)
+		}
+	}
 	for h, b := range billed {
 		i := int(a.s.dayStart(time.Unix(h, 0).In(a.s.loc)).Sub(from).Hours()/24 + 0.5)
 		if i >= 0 && i < n {
@@ -352,6 +357,7 @@ func (a *API) addRenewal(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "Could not save the renewal: "+err.Error())
 		return
 	}
+	a.s.forgetISPFactor() // the log changed
 	a.sendBundle(w)
 }
 
@@ -381,6 +387,7 @@ func (a *API) addCheck(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "Could not save the check: "+err.Error())
 		return
 	}
+	a.s.forgetISPFactor() // the log changed
 	a.sendBundle(w)
 }
 
@@ -399,6 +406,7 @@ func (a *API) deleteBundleEvent(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "No bundle entry with that id.")
 		return
 	}
+	a.s.forgetISPFactor() // the log changed
 	a.sendBundle(w)
 }
 

@@ -3,10 +3,10 @@
 import { useState } from "react";
 import type { Device, Overview } from "../api/types";
 import { Heatmap, StatTile } from "../charts";
-import { bytes, cz, DAY3, MON, rate } from "../fmt";
+import { bytes, cz, DAY3, hourLabel, hourTick, MON, rate } from "../fmt";
 import { liveHistory } from "../live";
 
-type Hour = { hour: string; down: number; up: number };
+type Hour = { hour: string; down: number; up: number; billed?: number };
 
 const pct = (a: number, b: number) => Math.round((Math.abs(a - b) / Math.max(1, b)) * 100);
 
@@ -17,15 +17,18 @@ export function StatsRow({ o, hours, devices }: { o: Overview; hours: Hour[]; de
   const today = cz(now).key;
   const yKey = cz(now - 86400e3).key;
   // Today so far, and yesterday up to the same time (its last hour pro rata).
+  // As the ISP counts it (whole packets on the wire); devices add up to the content.
   let t = 0;
   let y = 0;
+  let content = 0;
   const todayHours: number[] = [];
   for (const h of hours) {
     const at = Date.parse(h.hour);
     const k = cz(at).key;
-    const b = h.down + h.up;
+    const b = h.billed ?? h.down + h.up;
     if (k === today) {
       t += b;
+      content += h.down + h.up;
       todayHours.push(b);
     } else if (k === yKey && at + 86400e3 <= now) {
       const part = Math.min(1, (now - (at + 86400e3)) / 3600e3);
@@ -48,6 +51,13 @@ export function StatsRow({ o, hours, devices }: { o: Overview; hours: Hour[]; de
         trend={todayHours.length > 1 ? todayHours : undefined}
         trendFmt={(v) => bytes(v)}
         trendLabel="Each hour today"
+        tip={
+          t > content
+            ? `${bytes(t)} as your ISP counts it
+The same count the bundle uses.
+Devices ${bytes(content)} · packet headers and the gateway's own traffic ${bytes(t - content)}`
+            : undefined
+        }
       />
       <StatTile label="Busiest right now" value={bRate > 0 ? bRate : null} fmt={rate} sub={bRate > 0 ? busiest!.name : "everything is quiet"} />
     </div>
@@ -74,7 +84,7 @@ export function BusyHours({ hours, now }: { hours: Hour[]; now: number }) {
   };
   const totals = grid.map((row) => row.reduce<number>((s, v) => s + (v ?? 0), 0));
   const busiest = grid.map((row) => row.reduce<[number, number]>((m, v, c) => ((v ?? 0) > m[1] ? [c, v ?? 0] : m), [-1, 0]));
-  const hh = (c: number) => `${String(c).padStart(2, "0")}:00`;
+  const hh = hourLabel;
   // The busiest hour across the week, for the subtitle.
   const peak = busiest.reduce<[number, number, number]>((m, [c, v], r) => (v > m[2] ? [r, c, v] : m), [-1, -1, 0]);
   return (
@@ -122,7 +132,7 @@ export function BusyHours({ hours, now }: { hours: Hour[]; now: number }) {
             value={(r, c) => grid[r][c]}
             fmt={(v) => bytes(v)}
             rowLabel={(r) => (r === 6 ? "Today" : dayLabel(days[r]))}
-            colLabel={(c) => (c % 3 === 0 ? String(c).padStart(2, "0") : null)}
+            colLabel={(c) => (c % 3 === 0 ? hourTick(c) : null)}
             tip={(r, c) => `${r === 6 ? "Today" : `${dayLabel(days[r])} ${MON[+days[r].slice(5, 7) - 1]}`}, ${hh(c)}–${hh((c + 1) % 24)}`}
             current={[6, +nowP.h]}
             label="Whole-network traffic per hour over the last 7 days"

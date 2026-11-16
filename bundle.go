@@ -13,6 +13,13 @@ func (s *State) bundle(now time.Time) (*Bundle, error) {
 	if err != nil {
 		return nil, err
 	}
+	return s.bundleAt(now, evs, nil)
+}
+
+// bundleAt works the bundle out as of now from the given log entries (newest first).
+// end, when set, is an entry logged at now: only the part of its clock hour before
+// it counts (what Junction showed at that moment).
+func (s *State) bundleAt(now time.Time, evs []bundleEvent, end *bundleEvent) (*Bundle, error) {
 	var renewal *bundleEvent
 	for i := range evs { // newest first
 		if evs[i].Kind == "renewal" && !evs[i].At.After(now) {
@@ -37,7 +44,7 @@ func (s *State) bundle(now time.Time) (*Bundle, error) {
 	}
 	var rows []row
 	hourTotal := map[int64]int64{}
-	err = s.sumUsage(renewal.At.Truncate(time.Hour), now.Add(time.Hour), "", func(h int64, _, exit string, down, up int64) {
+	err := s.sumUsage(renewal.At.Truncate(time.Hour), now.Add(time.Hour), "", func(h int64, _, exit string, down, up int64) {
 		rows = append(rows, row{h, down + up, exit == "direct"})
 		hourTotal[h] += down + up
 	})
@@ -66,13 +73,33 @@ func (s *State) bundle(now time.Time) (*Bundle, error) {
 	}
 	rh, rf := share(*renewal)
 	ah, af := share(anchor)
+	// The hour of end: only what came before it.
+	eh, ef := int64(-1), 1.0
+	if end != nil {
+		eh = end.At.Truncate(time.Hour).Unix()
+		if tot := hourTotal[eh]; end.HourBefore >= 0 && tot > 0 {
+			ef = clamp01(float64(end.HourBefore) / float64(tot))
+		} else {
+			ef = clamp01(float64(end.At.Unix()-eh) / 3600)
+		}
+	}
+	part := func(h, n int64) int64 {
+		f := 1.0
+		if h == rh {
+			f *= rf
+		}
+		if h == eh {
+			f *= ef
+		}
+		if f == 1 {
+			return n
+		}
+		return int64(float64(n) * f)
+	}
 	// VPN / direct: the content each exit carried.
 	var tunnel, direct int64
 	for _, r := range rows {
-		n := r.n
-		if r.h == rh {
-			n = int64(float64(n) * rf)
-		}
+		n := part(r.h, r.n)
 		if r.direct {
 			direct += n
 		} else {
@@ -83,32 +110,42 @@ func (s *State) bundle(now time.Time) (*Bundle, error) {
 	billed, f := s.billed(hourTotal, renewal.At.Truncate(time.Hour), now.Add(time.Hour))
 	var used, sinceAnchor int64
 	for h, n := range billed {
-		if h == rh {
-			used += int64(float64(n) * rf)
-		} else {
-			used += n
-		}
+		used += part(h, n)
 		switch {
 		case h > ah:
-			sinceAnchor += n
+			sinceAnchor += part(h, n)
 		case h == ah:
-			sinceAnchor += int64(float64(n) * af)
+			sinceAnchor += int64(float64(part(h, n)) * af)
 		}
 	}
 
+	// Counted the way your ISP counts, once your logged figures say how (calibrate.go).
+	cal := s.calibrate(evs, now)
+	if cal != nil {
+		used = int64(float64(used) * cal.Factor)
+		sinceAnchor = int64(float64(sinceAnchor) * cal.Factor)
+	}
 	b := &Bundle{
 		RenewedAt: renewal.At.UTC().Format(time.RFC3339), Size: renewal.Amount,
 		Anchor:           Anchor{Kind: anchor.Kind, At: anchor.At.UTC().Format(time.RFC3339), Amount: anchor.Amount},
 		UsedSinceRenewal: used, Tunnel: tunnel, Direct: direct,
 		Left:        anchor.Amount - sinceAnchor,
+		Calibration: cal,
 		OverheadPct: math.Round((f-1)*1000) / 10,
 	}
 	if renewal.Expires != nil {
 		x := renewal.Expires.UTC().Format(time.RFC3339)
 		b.ExpiresAt = &x
 	}
-	if days := now.Sub(renewal.At).Hours() / 24; days >= 0.25 && used > 0 {
-		b.PacePerDay = int64(float64(used) / days)
+	// Pace: what the bundle says is used (your ISP's own figure at the last check, then
+	// Junction's count) over the time since the renewal. Junction's own count alone
+	// misses whatever it didn't see, like traffic from before a device used the gateway.
+	spent := used
+	if anchor.Kind == "check" {
+		spent = renewal.Amount - b.Left
+	}
+	if days := now.Sub(renewal.At).Hours() / 24; days >= 0.25 && spent > 0 {
+		b.PacePerDay = int64(float64(spent) / days)
 		if b.Left > 0 {
 			out := now.Add(time.Duration(float64(b.Left) / float64(b.PacePerDay) * 24 * float64(time.Hour)))
 			o := out.UTC().Format(time.RFC3339)
@@ -128,8 +165,11 @@ func (s *State) bundleInfo(now time.Time) (BundleInfo, error) {
 		return BundleInfo{}, err
 	}
 	info := BundleInfo{Current: cur, Events: []BundleEvent{}}
-	for _, e := range evs {
+	for i, e := range evs {
 		be := BundleEvent{ID: e.ID, Kind: e.Kind, At: e.At.UTC().Format(time.RFC3339), Amount: e.Amount}
+		if e.Kind == "check" && i < 10 {
+			be.Expected = s.expectedAt(e, evs[i+1:])
+		}
 		if e.Expires != nil {
 			x := e.Expires.UTC().Format(time.RFC3339)
 			be.ExpiresAt = &x
@@ -137,6 +177,17 @@ func (s *State) bundleInfo(now time.Time) (BundleInfo, error) {
 		info.Events = append(info.Events, be)
 	}
 	return info, nil
+}
+
+// expectedAt is what Junction said was left when a check was logged: the bundle
+// worked out from the entries before it, up to that moment. nil when there was no
+// bundle to count down from.
+func (s *State) expectedAt(e bundleEvent, older []bundleEvent) *int64 {
+	b, err := s.bundleAt(e.At, older, &e)
+	if err != nil || b == nil {
+		return nil
+	}
+	return &b.Left
 }
 
 func clamp01(f float64) float64 {

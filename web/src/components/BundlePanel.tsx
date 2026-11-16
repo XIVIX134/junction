@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { Columns, CountUp, LineChart } from "../charts";
 import { api, ApiError } from "../api/client";
-import type { Bundle, BundleState, Overview, UsageDay } from "../api/types";
+import type { Bundle, BundleEvent, BundleState, Overview, UsageDay } from "../api/types";
 import { bumpEvents } from "../events";
 import { bytes, dayKey, dmy, hm, MON } from "../fmt";
 import { fromLocalInput, toLocalInput } from "../format";
@@ -151,6 +151,21 @@ export function BundlePanel({ o }: { o: Overview }) {
                 }
                 cls={v.earlyDays ? "warnc" : ""}
               />
+              <Fact
+                k="Matched to your ISP"
+                v={
+                  b.calibration
+                    ? b.calibration.factor === 1
+                      ? "exactly"
+                      : `ISP counts ${Math.abs((1 - b.calibration.factor) * 100).toFixed(1)}% ${b.calibration.factor < 1 ? "less" : "more"}`
+                    : "after 2 checks"
+                }
+                tip={
+                  b.calibration
+                    ? `Your ISP counted ${bytes(b.calibration.isp)} where the gateway counted ${bytes(b.calibration.junction)}, between the figures you logged since ${dmy(b.calibration.since)}.\nSo Junction counts down at your ISP's rate.`
+                    : "Log what's left from your ISP's app a couple of times, at least 10 GB apart. Junction then learns how your ISP counts and matches it."
+                }
+              />
               <Fact k="Through VPN" v={bytes(b.tunnel)} />
               <Fact k="Direct" v={bytes(b.direct)} />
             </div>
@@ -199,8 +214,8 @@ export function UsedBar({ v, compact }: { v: BundleView; compact?: boolean }) {
   );
 }
 
-const Fact = ({ k, v, cls }: { k: string; v: string; cls?: string }) => (
-  <div>
+const Fact = ({ k, v, cls, tip }: { k: string; v: string; cls?: string; tip?: string }) => (
+  <div title={tip}>
     <div className="note">{k}</div>
     <div style={{ fontSize: 14 }} className={cls ?? "num"}>
       {v}
@@ -616,12 +631,16 @@ function Entries({
               <th>Logged</th>
               <th>Entry</th>
               <th className="rt">Amount</th>
+              <th className="rt" title="What Junction said was left at that moment, counting from the entry before">
+                Junction said
+              </th>
+              <th>Difference</th>
               <th>Ends</th>
               <th />
             </tr>
           </thead>
           <tbody>
-            {evs.map((e) => (
+            {evs.map((e, i) => (
               <tr key={e.id}>
                 <td className="t2">
                   {dmy(e.at)} {hm(e.at)}
@@ -630,6 +649,7 @@ function Entries({
                 <td className="rt">
                   {(e.amount / 1e9).toFixed(e.amount % 1e9 ? 1 : 0)} GB
                 </td>
+                <Drift e={e} older={evs.slice(i + 1)} />
                 <td className="t3">{e.expiresAt ? dmy(e.expiresAt) : "—"}</td>
                 <td className="rt">
                   {confirm === e.id ? (
@@ -673,7 +693,7 @@ function Entries({
             ))}
             {st && !evs.length && (
               <tr>
-                <td colSpan={5} className="t3">
+                <td colSpan={7} className="t3">
                   Nothing logged yet.
                 </td>
               </tr>
@@ -683,6 +703,42 @@ function Entries({
       </div>
       {a.msg && <div className={a.msg.ok ? "okmsg" : "err"}>{a.msg.t}</div>}
     </details>
+  );
+}
+
+/** How far Junction was from your ISP at a check, as counted since the entry before it. */
+export function driftOf(e: BundleEvent, older: BundleEvent[]) {
+  if (e.kind !== "check" || e.expected == null) return null;
+  const prev = older[0];
+  const diff = e.amount - e.expected; // > 0: the ISP says more is left, Junction counted too much
+  const counted = prev ? prev.amount - e.expected : 0;
+  const pct = counted > 0 ? (Math.abs(diff) / counted) * 100 : null;
+  return { diff, pct, close: pct != null ? pct < 0.5 : Math.abs(diff) < 0.2e9 };
+}
+
+function Drift({ e, older }: { e: BundleEvent; older: BundleEvent[] }) {
+  const d = driftOf(e, older);
+  if (!d)
+    return (
+      <>
+        <td className="rt t3">—</td>
+        <td className="t3">—</td>
+      </>
+    );
+  const amt = gbs(Math.abs(d.diff));
+  const pct = d.pct != null ? ` (${d.pct < 10 ? d.pct.toFixed(1) : Math.round(d.pct)}%)` : "";
+  const tip = d.close
+    ? "Junction and your ISP agreed."
+    : d.diff > 0
+      ? `Since the entry before, Junction counted ${amt}${pct} more than your ISP did.`
+      : `Since the entry before, your ISP counted ${amt}${pct} more than Junction did: traffic that didn't go through the gateway, for example.`;
+  return (
+    <>
+      <td className="rt num">{gbs(e.expected!)}</td>
+      <td className={d.close ? "okc" : "t2"} title={tip}>
+        {d.close ? "matched" : d.diff > 0 ? `counted ${amt} more${pct}` : `counted ${amt} less${pct}`}
+      </td>
+    </>
   );
 }
 

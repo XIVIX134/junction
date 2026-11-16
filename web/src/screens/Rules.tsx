@@ -5,7 +5,7 @@ import { isRouter, totalToday } from "../clients";
 import { RuleForm } from "../components/RuleParts";
 import { NeedOverview } from "../components/Shell";
 import { bumpEvents } from "../events";
-import { bytes, DAY3, exitName, hm } from "../fmt";
+import { bytes, clockText, DAY3, exitName, hm } from "../fmt";
 import { fromLocalInput } from "../format";
 import { useFetch, useLive } from "../live";
 import { Link, navigate, useLocation } from "../router";
@@ -238,7 +238,7 @@ export function Flow({ r, o }: { r: Pick<Rule, "match" | "when" | "then"> & { id
   const devs = members(r, o.devices);
   const a = appliesTo(r, o.devices);
   const when = whenText(r.when);
-  const resets = r.when.usage ? { day: "Resets at 00:00", week: "Resets Sunday 00:00", month: "Resets on the 1st," }[r.when.usage.period] : null;
+  const resets = r.when.usage ? { day: `Resets at ${clockText("00:00")}`, week: `Resets Sunday ${clockText("00:00")}`, month: "Resets on the 1st," }[r.when.usage.period] : null;
   const box = (x: number, label: string, title: string, sub: string, icon: string, acc = false) => (
     <>
       <div className={`node static ${acc ? "acc" : ""}`} style={{ left: x, top: 24, width: 210, height: 58 }}>

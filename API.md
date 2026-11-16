@@ -324,3 +324,13 @@ New config keys (all optional): `gateway_ip` (default: keepalived's floating add
 
 Categories come from the site names Junction sees (DNS and TLS): each name is matched against a built-in list of domains (`categories.go`), from the most specific suffix. Keys: `video`, `social`, `messaging`, `ai` (AI and developer tools), `gaming`, `music`, `updates`, `cloud`, `speedtest`, `web` (any other name) and `unnamed` (traffic to an IP address with no name: not guessed). Site history is kept `sitesDays` (35 by default).
 
+
+## v1.10: counting the way your ISP does; speed and clock settings
+
+- `GET /api/bundle`: `current.calibration` is `{ factor, isp, junction, intervals, since }` or `null`. Between the "what's left" figures you log, your ISP counted `isp` bytes and the gateway `junction` (whole packets on the wire); `factor = isp / junction` (e.g. `0.976`: the ISP counts 2.4% less). It uses up to the last 3 intervals of at least 10 GB within 45 days, and skips intervals where the two differ by more than 15% (traffic the gateway didn't see). `left`, `usedSinceRenewal` and `pacePerDay` are counted at that factor. `pacePerDay` is what the bundle says is used (the ISP's figure at the last check, then the count) over the days since the renewal.
+- `GET /api/bundle`: each check in `events` has `expected`: what Junction said was left at that moment, counting from the entry before.
+- `GET /api/traffic` (whole network only): each hour has `billed`, what the ISP bills for it (whole packets, at the factor above). `down + up` stay the devices' content.
+- `GET /api/usage`: `billed` is at the factor above too.
+- Settings: `speedUnit` `"bits"` (Mbit/s, default) or `"bytes"` (MB/s); `timeFormat` `"24h"` (default) or `"12h"`. Both also come with every overview. Speed limits are still stored in Mbit/s.
+
+Counting: Junction reads sing-box's connection list every second. Bytes of connections that close between two readings are recovered from sing-box's running totals, and the last reading is saved with every flush, so a restart picks up where it left off.

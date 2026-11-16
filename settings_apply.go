@@ -56,11 +56,13 @@ type FailoverPatch struct {
 }
 
 type SettingsPatch struct {
-	Brand    *BrandPatch   `json:"brand"`
-	Timezone *string       `json:"timezone"`
-	Network  *NetworkPatch `json:"network"`
-	DHCP     *DHCPPatch    `json:"dhcp"`
-	VPN      *struct {
+	Brand      *BrandPatch   `json:"brand"`
+	Timezone   *string       `json:"timezone"`
+	SpeedUnit  *string       `json:"speedUnit"`
+	TimeFormat *string       `json:"timeFormat"`
+	Network    *NetworkPatch `json:"network"`
+	DHCP       *DHCPPatch    `json:"dhcp"`
+	VPN        *struct {
 		DefaultProfile *string        `json:"defaultProfile"`
 		Profiles       *[]ProfileInfo `json:"profiles"`
 		Failover       *FailoverPatch `json:"failover"`
@@ -242,6 +244,26 @@ func (s *State) planPatch(p *SettingsPatch) (*patchPlan, error) {
 			return nil, bad("Pick a timezone from the list, like Europe/London.")
 		}
 		pl.saves["timezone"] = tz
+	}
+	if p.SpeedUnit != nil {
+		switch u := *p.SpeedUnit; u {
+		case "bits", "bytes":
+			pl.saves["speed_unit"] = u
+		case "":
+			pl.saves["speed_unit"] = "bits"
+		default:
+			return nil, bad("Speeds are shown in \"bits\" (Mbit/s) or \"bytes\" (MB/s).")
+		}
+	}
+	if p.TimeFormat != nil {
+		switch f := *p.TimeFormat; f {
+		case "24h", "12h":
+			pl.saves["time_format"] = f
+		case "":
+			pl.saves["time_format"] = "24h"
+		default:
+			return nil, bad("Times are shown as \"24h\" (14:30) or \"12h\" (2:30 PM).")
+		}
 	}
 	if n := p.Network; n != nil {
 		if err := s.planNetwork(pl, n); err != nil {

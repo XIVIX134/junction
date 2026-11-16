@@ -1,4 +1,5 @@
 import type { Device, Effective, Profile, Rule, RuleDraft, RuleMatch, RuleSchedule, RuleThen, RuleWhen } from "./api/types";
+import { capText, clockText } from "./fmt";
 import { fromLocalInput, TZ } from "./format";
 
 // Plain-language helpers for rules: summaries, day ranges, when a rule's window ends.
@@ -25,7 +26,7 @@ export function daysText(days: number[]): string {
 }
 
 export function scheduleText(s: RuleSchedule): string {
-  return `${daysText(s.days)} ${s.start}–${s.end}`;
+  return `${daysText(s.days)} ${clockText(s.start)}–${clockText(s.end)}`;
 }
 
 const PERIOD: Record<string, string> = { day: "today", week: "this week", month: "this month" };
@@ -53,7 +54,7 @@ export function whenText(w: RuleWhen): string | null {
 export function thenText(t: RuleThen): string {
   const parts: string[] = [];
   if (t.pause) parts.push("Pause");
-  if (t.speedMbps != null) parts.push(`Slow to ${t.speedMbps} Mbit/s`);
+  if (t.speedMbps != null) parts.push(`Slow to ${capText(t.speedMbps)}`);
   if (t.vpn != null) parts.push(t.vpn ? "VPN on" : "VPN off");
   if (t.profile) parts.push(`${t.profile} profile`);
   return parts.length ? parts.join(", ") : "Nothing yet";

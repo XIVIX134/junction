@@ -41,7 +41,7 @@ function stream(req: IncomingMessage, res: ServerResponse) {
     Connection: "keep-alive",
     "X-Junction-Sample": "1",
   });
-  const send = () => res.write(`event: overview\ndata: ${JSON.stringify(fx.overview())}\n\n`);
+  const send = () => res.write(`event: overview\ndata: ${JSON.stringify({ ...fx.overview(), speedUnit: settings.speedUnit, timeFormat: settings.timeFormat })}\n\n`);
   send();
   const timer = setInterval(send, 2000);
   streams.add(res);
@@ -74,7 +74,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, next: Next) {
   }
 
   try {
-    if (path === "/api/overview" && method === "GET") return json(res, 200, fx.overview());
+    if (path === "/api/overview" && method === "GET") return json(res, 200, { ...fx.overview(), speedUnit: settings.speedUnit, timeFormat: settings.timeFormat });
     if (path === "/api/stream" && method === "GET") return stream(req, res);
     if (path === "/api/devices/daily" && method === "GET") return json(res, 200, fx.devicesDaily(url.searchParams));
     if (path === "/api/devices" && method === "GET") return json(res, 200, fx.deviceList());
@@ -229,6 +229,8 @@ const settings = {
   brand: { name: "Junction", color: "#4797ff", letter: "J", image: null as string | null },
   timezone: "Europe/London",
   timezoneDetected: "Europe/London",
+  speedUnit: (process.env.MOCK_SPEED === "bytes" ? "bytes" : "bits") as "bits" | "bytes",
+  timeFormat: (process.env.MOCK_CLOCK === "12h" ? "12h" : "24h") as "24h" | "12h",
   network: {
     gatewayIP: "192.168.50.4",
     lan: "192.168.50.0/24",

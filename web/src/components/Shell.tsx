@@ -2,7 +2,7 @@ import { CountUp, LineChart } from "../charts";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Overview } from "../api/types";
 import { gatewayIP, gatewayShort, selectedEndpoint } from "../clients";
-import { dmy, hm, hms, rate } from "../fmt";
+import { dmy, hm, hms, rate, speedAxis, speedValue } from "../fmt";
 import { liveHistory, useLive } from "../live";
 import { Link, navigate, useLocation } from "../router";
 import { Icon } from "../ui";
@@ -82,7 +82,7 @@ const NAV: {
 function LiveRates({ o }: { o: Overview }) {
   const [open, setOpen] = useState(false);
   const hist = liveHistory();
-  const mb = (v: number) => (v * 8) / 1e6;
+  const mb = speedValue;
   const stat = (k: "down" | "up") => {
     const v = hist.map((s) => s[k]);
     return v.length
@@ -145,7 +145,7 @@ function LiveRates({ o }: { o: Overview }) {
                   color: "var(--series-up)",
                 },
               ]}
-              yFmt={(v) => `${v >= 10 ? v.toFixed(0) : v.toFixed(1)} Mbit/s`}
+              yFmt={speedAxis}
             />
           ) : (
             <span

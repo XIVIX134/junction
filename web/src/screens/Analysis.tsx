@@ -6,7 +6,7 @@ import { api } from "../api/client";
 import type { CategoriesView, Overview, UsageDay } from "../api/types";
 import { Columns, Heatmap, Spark } from "../charts";
 import { StackedColumns, useFlip, type Stack } from "../charts2";
-import { bytes, cz, DAY3, dmy, MON } from "../fmt";
+import { bytes, cz, DAY3, dmy, hourLabel, hourTick, MON } from "../fmt";
 import { useFetch } from "../live";
 import { navigate } from "../router";
 import { exitColorVar, exitDisplayName } from "../site";
@@ -457,7 +457,7 @@ export function InsightsPanel({
       icon: "clock",
       text: (
         <>
-          Busiest hour: <b>{`${DAY3[p.dow]} ${p.h}:00`}</b>{" "}
+          Busiest hour: <b>{`${DAY3[p.dow]} ${hourLabel(+p.h)}`}</b>{" "}
           <span className="t3">
             · {bytes(week[bi].down + week[bi].up)} in that hour
           </span>
@@ -739,7 +739,7 @@ export function DeviceWeek({ id }: { id: string }) {
   for (let r = 0; r < 7; r++)
     for (let c = 0; c < 24; c++)
       if (grid[r][c] == null && !(r === 6 && c > +nowP.h)) grid[r][c] = 0;
-  const hh = (c: number) => `${String(c).padStart(2, "0")}:00`;
+  const hh = hourLabel;
   return (
     <div className="sec">
       <div className="st">
@@ -752,7 +752,7 @@ export function DeviceWeek({ id }: { id: string }) {
           value={(r, c) => grid[r][c]}
           fmt={(v) => bytes(v)}
           rowLabel={(r) => (r === 6 ? "Today" : dayName(days[r]).slice(0, 3))}
-          colLabel={(c) => (c % 6 === 0 ? String(c).padStart(2, "0") : null)}
+          colLabel={(c) => (c % 6 === 0 ? hourTick(c) : null)}
           tip={(r, c) =>
             `${r === 6 ? "Today" : dayName(days[r])}, ${hh(c)}–${hh((c + 1) % 24)}`
           }
